@@ -1,0 +1,346 @@
+// Service Worker for PWA and Push Notifications
+// Enhanced with caching strategies and offline support
+
+const CACHE_NAME = 'webrtc-webpush-v4';
+const DATA_CACHE_NAME = 'webrtc-webpush-data-v4';
+
+// Files to cache for offline functionality
+const FILES_TO_CACHE = [
+    '/manifest.json',
+    '/favicon.ico',
+    '/favicon.svg',
+    '/icons/icon-192x192.png',
+    '/icons/icon-512x512.png',
+    '/apple-touch-icon.png',
+    // Add other static assets as needed
+];
+
+// URLs that should be cached with network-first strategy
+const DATA_URLS = [
+     '/api/user',
+     '/api/notifications',
+     //'/notifications/subscribe',
+     //'/notifications/unsubscribe',
+     '/notifications/test',
+     '/login',
+     '/logout'
+];
+
+// Install event - cache app shell
+self.addEventListener('install', (event) => {
+    console.log('Service Worker installing...');
+    
+    event.waitUntil(
+        caches.open(CACHE_NAME)
+            .then((cache) => {
+                console.log('Caching app shell');
+                return cache.addAll(FILES_TO_CACHE);
+            })
+            .then(() => {
+                // Skip waiting to activate immediately
+                return self.skipWaiting();
+            })
+    );
+});
+
+// Activate event - clean up old caches
+self.addEventListener('activate', (event) => {
+    console.log('Service Worker activating...');
+    
+    event.waitUntil(
+        caches.keys().then((cacheNames) => {
+            return Promise.all(
+                cacheNames.map((cacheName) => {
+                    if (cacheName !== CACHE_NAME && cacheName !== DATA_CACHE_NAME) {
+                        console.log('Deleting old cache:', cacheName);
+                        return caches.delete(cacheName);
+                    }
+                })
+            );
+        }).then(() => {
+            return self.clients.claim();
+        })
+    );
+});
+
+// Fetch event - implement caching strategies
+self.addEventListener('fetch', (event) => {
+    // Skip non-http requests
+    if (!event.request.url.startsWith('http')) {
+        return;
+    }
+
+    // Handle API requests with network-first strategy
+    if (DATA_URLS.some(url => event.request.url.includes(url))) {
+        event.respondWith(
+            caches.open(DATA_CACHE_NAME).then((cache) => {
+                return fetch(event.request)
+                    .then((response) => {
+                        // Cache successful responses
+                        if (response.status === 200) {
+                            cache.put(event.request.url, response.clone());
+                        }
+                        return response;
+                    })
+                    .catch(() => {
+                        // Fallback to cache if network fails
+                        return cache.match(event.request);
+                    });
+            })
+        );
+        return;
+    }
+
+    // Handle app shell with cache-first strategy
+    event.respondWith(
+        caches.match(event.request).then((response) => {
+            if (response) {
+                return response;
+            }
+
+            // Clone the request for fetch
+            const fetchRequest = event.request.clone();
+
+            return fetch(fetchRequest).then((response) => {
+                // Check if valid response
+                if (!response || response.status !== 200 || response.type !== 'basic') {
+                    return response;
+                }
+
+                // Clone the response for caching
+                const responseToCache = response.clone();
+
+                caches.open(CACHE_NAME).then((cache) => {
+                    cache.put(event.request, responseToCache);
+                });
+
+                return response;
+            }).catch(() => {
+                // Return offline page for navigation requests
+                if (event.request.mode === 'navigate') {
+                    return caches.match('/offline.html');
+                }
+            });
+        })
+    );
+});
+
+// Push event handler - enhanced for iOS with badge support
+self.addEventListener('push', (event) => {
+    console.log('Push notification received:', event);
+    
+    let notificationData = {
+        title: 'Cash App',
+        body: 'You have a new notification',
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'lucy-notification',
+        requireInteraction: false, // iOS prefers false
+        silent: false,
+        data: {}
+    };
+
+    // Parse the push data
+    if (event.data) {
+        try {
+            const data = event.data.json();
+            notificationData = {
+                ...notificationData,
+                ...data,
+                // Ensure we have iOS-compatible options
+                icon: data.icon || '/favicon.ico',
+                badge: data.badge || '/favicon.ico',
+                tag: data.tag || 'lucy-notification',
+                data: data.data || {}
+            };
+        } catch (error) {
+            console.error('Error parsing push data:', error);
+            notificationData.body = event.data.text();
+        }
+    }
+
+    // iOS-specific adjustments
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    if (isIOS) {
+        // iOS notifications work better with simpler options
+        notificationData.requireInteraction = false;
+        notificationData.silent = false;
+    }
+
+    // Update PWA badge count if supported
+    const badgeCount = notificationData.data.badge || 1;
+    updateBadgeCount(badgeCount);
+
+    const promiseChain = self.registration.showNotification(
+        notificationData.title,
+        {
+            body: notificationData.body,
+            icon: notificationData.icon,
+            badge: notificationData.badge,
+            tag: notificationData.tag,
+            data: notificationData.data,
+            requireInteraction: notificationData.requireInteraction,
+            silent: notificationData.silent,
+            actions: notificationData.actions || []
+        }
+    );
+
+    event.waitUntil(promiseChain);
+});
+
+// Notification click handler
+self.addEventListener('notificationclick', (event) => {
+    console.log('Notification clicked:', event);
+    
+    event.notification.close();
+
+    // Clear the PWA badge when notification is clicked
+    clearBadgeCount();
+
+    // Handle different notification types
+    const notificationData = event.notification.data || {};
+    let urlToOpen = '/dashboard';
+
+    if (notificationData.url) {
+        urlToOpen = notificationData.url;
+    } else if (notificationData.type === 'money_received') {
+        urlToOpen = '/dashboard?tab=transactions';
+    } else if (notificationData.type === 'money_request') {
+        urlToOpen = '/dashboard?tab=requests';
+    }
+
+    const promiseChain = clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true
+    }).then((clientList) => {
+        // Check if there's already a window/tab open
+        for (let client of clientList) {
+            if (client.url.includes(self.location.origin)) {
+                client.focus();
+                client.navigate(urlToOpen);
+                // Clear badge on server when app is opened
+                clearServerBadgeCount();
+                return;
+            }
+        }
+        
+        // If no window is open, open a new one
+        return clients.openWindow(urlToOpen).then(() => {
+            // Clear badge on server when app is opened
+            clearServerBadgeCount();
+        });
+    });
+
+    event.waitUntil(promiseChain);
+});
+
+// Handle notification close
+self.addEventListener('notificationclose', (event) => {
+    console.log('Notification closed:', event);
+    // You can track notification dismissals here
+});
+
+// Background sync for offline functionality (optional)
+self.addEventListener('sync', (event) => {
+    if (event.tag === 'background-sync') {
+        console.log('Background sync triggered');
+        // Handle offline notification queue here if needed
+    }
+});
+
+// Message handler for communication with main thread
+self.addEventListener('message', (event) => {
+    console.log('Service Worker received message:', event.data);
+    
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+});
+
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
+
+    if (event.action === 'pay') {
+        // Handle pay action for money requests
+        event.waitUntil(
+            clients.openWindow('/dashboard?action=pay&id=' + event.notification.data.requester_id)
+        );
+    } else if (event.action === 'view' || !event.action) {
+        // Default action or view action
+        event.waitUntil(
+            clients.openWindow(event.notification.data.url || '/dashboard')
+        );
+    }
+});
+
+self.addEventListener('notificationclose', function(event) {
+    // Analytics or cleanup when notification is dismissed
+    console.log('Notification was closed', event);
+});
+
+// Handle background sync if needed
+self.addEventListener('sync', function(event) {
+    if (event.tag === 'background-sync') {
+        event.waitUntil(doBackgroundSync());
+    }
+});
+
+function doBackgroundSync() {
+    // Implement background sync logic if needed
+    return Promise.resolve();
+}
+
+// Badge management functions for PWA homescreen icon
+function updateBadgeCount(count) {
+    // Check if Badge API is supported (mainly for Android Chrome)
+    if ('setAppBadge' in navigator) {
+        navigator.setAppBadge(count).catch(err => {
+            console.log('Error setting app badge:', err);
+        });
+    }
+    
+    // Store badge count for unsupported browsers
+    try {
+        self.caches.open('badge-cache').then(cache => {
+            cache.put('/badge-count', new Response(count.toString()));
+        });
+    } catch (err) {
+        console.log('Error caching badge count:', err);
+    }
+}
+
+function clearBadgeCount() {
+    // Clear badge on supported browsers
+    if ('clearAppBadge' in navigator) {
+        navigator.clearAppBadge().catch(err => {
+            console.log('Error clearing app badge:', err);
+        });
+    }
+    
+    // Clear cached badge count
+    try {
+        self.caches.open('badge-cache').then(cache => {
+            cache.delete('/badge-count');
+        });
+    } catch (err) {
+        console.log('Error clearing cached badge count:', err);
+    }
+}
+
+function clearServerBadgeCount() {
+    // Clear badge count on the server
+    fetch('/notifications/clear-badge', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+    }).then(response => {
+        if (response.ok) {
+            console.log('Server badge count cleared');
+        }
+    }).catch(err => {
+        console.log('Error clearing server badge count:', err);
+    });
+}
