@@ -39,7 +39,7 @@ A comprehensive WebRTC calling system with push notifications built on Laravel, 
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone https://github.com/mastashake08/webrtc-webpush-laravel.git
 cd webrtc-webpush-laravel
 
 # Install PHP dependencies
