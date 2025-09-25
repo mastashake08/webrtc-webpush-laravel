@@ -1,35 +1,8 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACH            case 'webrtc_send_sdp':
-                console.log('📞 SW: Processing incoming call with session ID:', notificationData.data.session_id);
-                
-                // Validate required data for incoming calls
-                if (!notificationData.data.session_id) {
-                    console.error('❌ SW: Missing session_id for incoming call!');
-                    return;
-                }
-                
-                // Send normal incoming call message to clients with validated data
-                console.log('📞 SW: Sending incoming call data to clients:', notificationData.data);
-                sendMessageToClients({
-                    type: 'WEBRTC_INCOMING_CALL',
-                    data: {
-                        session_id: notificationData.data.session_id,
-                        caller_id: notificationData.data.caller_id,
-                        caller_name: notificationData.data.caller_name || 'Unknown Caller',
-                        call_type: notificationData.data.call_type || 'video',
-                        call_id: notificationData.data.call_id
-                    }
-                });
-                
-                // Show incoming call notification
-                notificationData.title = '📞 Incoming Call';
-                notificationData.body = `${notificationData.data.caller_name || 'Unknown'} is calling you`;
-                notificationData.requireInteraction = true;
-                notificationData.silent = false;
-                break;-webpush-v5.2';
-const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.2';
+const CACHE_NAME = 'webrtc-webpush-v5.4';
+const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.4';
 
 // Files to cache for offline functionality
 const FILES_TO_CACHE = [
@@ -152,7 +125,7 @@ self.addEventListener('push', (event) => {
                 });
                 
                 // Show incoming call notification
-                notificationData.title = '� Incoming Call';
+                notificationData.title = 'Incoming Call';
                 notificationData.body = `${notificationData.data.caller_name || 'Unknown'} is calling you`;
                 notificationData.requireInteraction = true;
                 notificationData.silent = false;
@@ -237,7 +210,7 @@ self.addEventListener('notificationclick', (event) => {
             case 'webrtc_send_sdp':
                 // Incoming call
                 if (event.action === 'accept_call') {
-                    urlToOpen = `/call/accept/${notificationData.call_id}`;
+                    urlToOpen = `/call/accept/${notificationData.session_id}`;
                 } else if (event.action === 'reject_call') {
                     // Send API request to decline call
                     fetch('/api/webrtc/end-call', {
@@ -247,7 +220,7 @@ self.addEventListener('notificationclick', (event) => {
                         },
                         body: JSON.stringify({
                             target_user_id: notificationData.caller_id,
-                            call_id: notificationData.call_id,
+                            call_id: notificationData.session_id,
                             reason: 'declined'
                         })
                     }).catch(err => console.error('Failed to decline call:', err));
@@ -255,12 +228,12 @@ self.addEventListener('notificationclick', (event) => {
                     clearServerBadgeCount();
                     return; // Don't open any window
                 } else {
-                    urlToOpen = `/call/incoming/${notificationData.call_id}`;
+                    urlToOpen = `/call/incoming/${notificationData.session_id}`;
                 }
                 break;
                 
             case 'webrtc_receive_sdp':
-                urlToOpen = `/call/active/${notificationData.call_id}`;
+                urlToOpen = `/call/active/${notificationData.session_id}`;
                 break;
                 
             case 'webrtc_call_ended':

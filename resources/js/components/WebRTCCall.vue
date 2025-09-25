@@ -50,8 +50,49 @@ const currentUser = computed(() => page.props.auth?.user)
 const rtcConfiguration: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
   ]
+}
+
+// Helper function to parse SDP data from database storage
+const parseSdpData = (rawSdp: any, context: string = 'SDP'): RTCSessionDescriptionInit => {
+  console.log(`📞 WebRTCCall: Parsing ${context} data:`, rawSdp)
+  
+  let sdpData
+  try {
+    if (typeof rawSdp === 'string') {
+      // If it's a JSON string, parse it
+      sdpData = JSON.parse(rawSdp)
+    } else if (typeof rawSdp === 'object' && rawSdp !== null) {
+      // If it's already an object, use it directly
+      sdpData = rawSdp
+    } else {
+      throw new Error(`Invalid ${context} format: expected string or object`)
+    }
+    
+    // Validate SDP structure
+    if (!sdpData.type || !sdpData.sdp) {
+      throw new Error(`${context} missing required 'type' or 'sdp' properties`)
+    }
+    
+    // Validate SDP type
+    if (!['offer', 'answer'].includes(sdpData.type)) {
+      throw new Error(`${context} has invalid type: ${sdpData.type}`)
+    }
+    
+    console.log(`✅ WebRTCCall: Successfully parsed ${context}:`, {
+      type: sdpData.type,
+      sdpLength: sdpData.sdp.length,
+      ...sdpData
+    })
+    
+    return sdpData
+    
+  } catch (error: any) {
+    console.error(`❌ WebRTCCall: Error parsing ${context}:`, error.message)
+    console.error(`❌ WebRTCCall: Raw ${context} data:`, rawSdp)
+    throw new Error(`Failed to parse ${context}: ${error.message}`)
+  }
 }
 
 // Initialize WebRTC
@@ -244,7 +285,16 @@ const acceptCall = async () => {
     
     // Set remote description (the offer)
     if (peerConnection && props.incomingCall.sdp) {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(props.incomingCall.sdp))
+      console.log('📞 WebRTCCall: Setting remote description from props...')
+      
+      try {
+        const sdpOffer = parseSdpData(props.incomingCall.sdp, 'incoming call offer')
+        const remoteDesc = new RTCSessionDescription(sdpOffer)
+        await peerConnection.setRemoteDescription(remoteDesc)
+      } catch (error: any) {
+        console.error('❌ WebRTCCall: Failed to set remote description from props:', error)
+        throw error
+      }
       
       // Create answer
       const answer = await peerConnection.createAnswer()
@@ -304,7 +354,16 @@ const acceptIncomingCall = async (callData: any) => {
     // Set remote description (the offer)
     if (peerConnection && callData.sdp) {
       console.log('📞 WebRTCCall: Setting remote description and creating answer...')
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(callData.sdp))
+      
+      try {
+        console.log(callData.sdp)
+        const sdpOffer = parseSdpData(callData.sdp, 'incoming call offer')
+        const remoteDesc = new RTCSessionDescription(sdpOffer)
+        await peerConnection.setRemoteDescription(remoteDesc)
+      } catch (error: any) {
+        console.error('❌ WebRTCCall: Failed to set remote description:', error)
+        throw error
+      }
       
       // Create answer
       const answer = await peerConnection.createAnswer()
@@ -447,11 +506,19 @@ const handleRemoteIceCandidate = async (candidateData: any) => {
 const handleRemoteAnswer = async (answerData: any) => {
   if (peerConnection && answerData) {
     try {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answerData))
+      console.log('📞 WebRTCCall: Handling remote answer...')
+      
+      const sdpAnswer = parseSdpData(answerData, 'remote answer')
+      const remoteDesc = new RTCSessionDescription(sdpAnswer)
+      await peerConnection.setRemoteDescription(remoteDesc)
+      
       isCallActive.value = true
       isOutgoingCall.value = false
-    } catch (error) {
-      console.error('Error setting remote description:', error)
+      console.log('✅ WebRTCCall: Remote answer set successfully')
+      
+    } catch (error: any) {
+      console.error('❌ WebRTCCall: Error setting remote answer:', error)
+      emit('error', 'Failed to process call answer')
     }
   }
 }

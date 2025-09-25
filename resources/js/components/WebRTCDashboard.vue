@@ -308,25 +308,28 @@ const acceptCall = () => {
   console.log('📞 Dashboard: Accepting call:', incomingCall.value.call_id)
   console.log('📞 Dashboard: Call data:', incomingCall.value)
   
+  // Store the call data before clearing it
+  const callData = { ...incomingCall.value }
+  
   // Set the active call state for the WebRTCCall component
   activeCall.value = {
-    caller_user_id: incomingCall.value.caller_id,
-    call_id: incomingCall.value.call_id,
-    call_type: incomingCall.value.call_type,
+    caller_user_id: callData.caller_id,
+    call_id: callData.call_id,
+    call_type: callData.call_type,
     status: 'incoming_accepted',
-    sdp: incomingCall.value.sdp, // Include the SDP data
-    session_id: incomingCall.value.session_id
+    sdp: callData.sdp, // Include the SDP data
+    session_id: callData.session_id
   }
   
   // Clear incoming call modal but keep call interface active
   showIncomingCallModal.value = false
   
-  // Trigger the accept call in the WebRTCCall component
+  // Trigger the accept call in the WebRTCCall component with the stored data
   nextTick(() => {
     const webrtcCallComponent = webrtcCall.value
     if (webrtcCallComponent && webrtcCallComponent.acceptIncomingCall) {
-      console.log('✅ Dashboard: Found WebRTCCall component, calling acceptIncomingCall()')
-      webrtcCallComponent.acceptIncomingCall(incomingCall.value)
+      console.log('✅ Dashboard: Found WebRTCCall component, calling acceptIncomingCall() with data:', callData)
+      webrtcCallComponent.acceptIncomingCall(callData)
     } else {
       console.error('❌ Dashboard: WebRTCCall component not found or acceptIncomingCall method missing', {
         component: webrtcCallComponent,
