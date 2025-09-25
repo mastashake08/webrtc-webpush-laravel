@@ -4,6 +4,7 @@
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
+
         {{-- Inline script to detect system dark mode preference and apply it immediately --}}
         <script>
             (function() {
@@ -19,9 +20,9 @@
             })();
         </script>
 
-        {{-- Inline style to set the HTML background color based on our theme in app.css --}}
-        <style>
-            html {
+            {{-- Inline style to set the HTML background color based on our theme in app.css --}}
+            <style>
+                html {
                 background-color: oklch(1 0 0);
             }
 
@@ -32,19 +33,8 @@
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-        
-        {{-- PWA Manifest --}}
+        <!-- PWA Manifest -->
         <link rel="manifest" href="/manifest.json">
-        <meta name="theme-color" content="#16a34a">
-        <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="default">
-        <meta name="apple-mobile-web-app-title" content="{{ config('app.name') }}">
-        <meta name="msapplication-TileColor" content="#16a34a">
-        <meta name="msapplication-TileImage" content="/icons/icon-144x144.png">
-
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
@@ -53,21 +43,5 @@
     </head>
     <body class="font-sans antialiased">
         @inertia
-        
-        {{-- Service Worker Registration --}}
-        <script>
-            // Register service worker for PWA functionality
-            if ('serviceWorker' in navigator) {
-                window.addEventListener('load', function() {
-                    navigator.serviceWorker.register('/sw.js')
-                        .then(function(registration) {
-                            console.log('ServiceWorker registration successful:', registration.scope);
-                        })
-                        .catch(function(error) {
-                            console.log('ServiceWorker registration failed:', error);
-                        });
-                });
-            }
-        </script>
     </body>
 </html>
