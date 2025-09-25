@@ -7,7 +7,7 @@ import { createApp, h } from 'vue';
 import { initializeTheme } from './composables/useAppearance';
 import axios from 'axios';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = import.meta.env.VITE_APP_NAME || 'WebRTC Push';
 
 // Configure CSRF token for all requests
 const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');

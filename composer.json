@@ -1,11 +1,13 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "laravel/vue-starter-kit",
+    "name": "webrtc-push/laravel-app",
     "type": "project",
-    "description": "The skeleton application for the Laravel framework.",
+    "description": "WebRTC Push Notifications Laravel Application with Vue frontend.",
     "keywords": [
+        "webrtc",
+        "push-notifications",
         "laravel",
-        "framework"
+        "vue"
     ],
     "license": "MIT",
     "require": {
