@@ -1,14 +1,14 @@
 {
   "name": "WebRTC Push",
   "short_name": "WebRTC Push",
-  "description": "A modern WebRTC Push clone built with Laravel, Inertia.js, and Vue.js. Send money, receive payments, and manage your balance with push notifications.",
+  "description": "A modern WebRTC calling application with push notifications. Make peer-to-peer video calls, receive instant notifications, and stay connected with real-time communication.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "theme_color": "#16a34a",
   "background_color": "#16a34a",
-  "categories": ["finance", "business", "productivity"],
+  "categories": ["communication", "social", "utilities"],
   "lang": "en-US",
   "icons": [
     {

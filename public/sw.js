@@ -8,27 +8,11 @@ const DATA_CACHE_NAME = 'webrtc-webpush-data-v4';
 const FILES_TO_CACHE = [
     '/manifest.json',
     '/favicon.ico',
-    '/favicon.svg',
-    '/icons/icon-192x192.png',
-    '/icons/icon-512x512.png',
-    '/apple-touch-icon.png',
-    // Add function clearServerBadgeCount() {
-    // Clear badge count on the server
-    fetch('/api/notifications/clear-badge', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        credentials: 'same-origin'
-    }).then(response => {
-        if (response.ok) {
-            console.log('Server badge count cleared');
-        }
-    }).catch(err => {
-        console.log('Error clearing server badge count:', err);
-    });
-}
+    '/favicon.svg'
+    // '/icons/icon-192x192.png',
+    // '/icons/icon-512x512.png',
+    // '/apple-touch-icon.png'
+];
 
 // Send message to all active clients
 function sendMessageToClients(message) {
@@ -382,26 +366,7 @@ self.addEventListener('message', (event) => {
     }
 });
 
-self.addEventListener('notificationclick', function(event) {
-    event.notification.close();
-
-    if (event.action === 'pay') {
-        // Handle pay action for money requests
-        event.waitUntil(
-            clients.openWindow('/dashboard?action=pay&id=' + event.notification.data.requester_id)
-        );
-    } else if (event.action === 'view' || !event.action) {
-        // Default action or view action
-        event.waitUntil(
-            clients.openWindow(event.notification.data.url || '/dashboard')
-        );
-    }
-});
-
-self.addEventListener('notificationclose', function(event) {
-    // Analytics or cleanup when notification is dismissed
-    console.log('Notification was closed', event);
-});
+// Duplicate event listeners removed - handled above in WebRTC-specific handlers
 
 // Handle background sync if needed
 self.addEventListener('sync', function(event) {

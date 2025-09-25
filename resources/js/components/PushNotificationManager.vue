@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+import axios from 'axios'
 
 // Props
 interface Props {
@@ -45,6 +46,7 @@ const initializePushNotifications = async () => {
 
     // Register service worker
     swRegistration = await navigator.serviceWorker.register('/sw.js')
+    console.log('Service Worker registered with scope:', swRegistration.scope)
     console.log('Service Worker registered successfully')
 
     // Check current subscription
@@ -160,19 +162,8 @@ const unsubscribe = async () => {
 // Get VAPID public key from server
 const getVapidPublicKey = async (): Promise<string | null> => {
   try {
-    const response = await fetch('/api/notifications/vapid-key', {
-      headers: {
-         'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to get VAPID public key')
-    }
-
-    const data = await response.json()
-    return data.public_key
+    const response = await axios.get('/api/notifications/vapid-key')
+    return response.data.public_key
   } catch (error) {
     console.error('Error getting VAPID public key:', error)
     return null
@@ -183,41 +174,22 @@ const getVapidPublicKey = async (): Promise<string | null> => {
 const sendSubscriptionToServer = async (subscription: PushSubscription) => {
   const subscriptionObject = subscription.toJSON()
   
-  const response = await fetch('/api/notifications/subscribe', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-TOKEN': getCSRFToken()
-    },
-    body: JSON.stringify({
-      endpoint: subscriptionObject.endpoint,
-      keys: subscriptionObject.keys
-    })
+  const response = await axios.post('/api/notifications/subscribe', {
+    endpoint: subscriptionObject.endpoint,
+    keys: subscriptionObject.keys
   })
-
-  if (!response.ok) {
-    const error = await response.text()
-    throw new Error(`Failed to save subscription: ${error}`)
-  }
 }
 
 // Remove subscription from server
 const removeSubscriptionFromServer = async (subscription: PushSubscription) => {
-  const subscriptionObject = subscription.toJSON()
-  
-  const response = await fetch('/api/notifications/unsubscribe', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRF-TOKEN': getCSRFToken()
-    },
-    body: JSON.stringify({
+  try {
+    const subscriptionObject = subscription.toJSON()
+    
+    const response = await axios.post('/api/notifications/unsubscribe', {
       endpoint: subscriptionObject.endpoint
     })
-  })
-
-  if (!response.ok) {
-    console.warn('Failed to remove subscription from server')
+  } catch (error) {
+    console.warn('Failed to remove subscription from server:', error)
   }
 }
 
@@ -229,18 +201,7 @@ const sendTestNotification = async () => {
   }
 
   try {
-    const response = await fetch('/api/notifications/test', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': getCSRFToken()
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('Failed to send test notification')
-    }
-
+    const response = await axios.post('/api/notifications/test')
     console.log('Test notification sent successfully')
   } catch (error) {
     console.error('Error sending test notification:', error)
@@ -251,21 +212,13 @@ const sendTestNotification = async () => {
 // Clear badge count
 const clearBadgeCount = async () => {
   try {
-    const response = await fetch('/api/notifications/clear-badge', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': getCSRFToken()
-      }
-    })
-
-    if (response.ok) {
-      badgeCount.value = 0
-      
-      // Also clear browser badge if supported
-      if ('clearAppBadge' in navigator) {
-        await (navigator as any).clearAppBadge()
-      }
+    const response = await axios.post('/api/notifications/clear-badge')
+    
+    badgeCount.value = 0
+    
+    // Also clear browser badge if supported
+    if ('clearAppBadge' in navigator) {
+      await (navigator as any).clearAppBadge()
     }
   } catch (error) {
     console.error('Error clearing badge count:', error)
@@ -275,20 +228,12 @@ const clearBadgeCount = async () => {
 // Fetch current badge count
 const fetchBadgeCount = async () => {
   try {
-    const response = await fetch('/api/user/badge-count', {
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      }
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      badgeCount.value = data.badge_count || 0
-      
-      // Update browser badge if supported
-      if ('setAppBadge' in navigator && badgeCount.value > 0) {
-        await (navigator as any).setAppBadge(badgeCount.value)
-      }
+    const response = await axios.get('/api/user/badge-count')
+    badgeCount.value = response.data.badge_count || 0
+    
+    // Update browser badge if supported
+    if ('setAppBadge' in navigator && badgeCount.value > 0) {
+      await (navigator as any).setAppBadge(badgeCount.value)
     }
   } catch (error) {
     console.error('Error fetching badge count:', error)
@@ -322,11 +267,6 @@ const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   }
   
   return outputArray
-}
-
-const getCSRFToken = (): string => {
-  const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-  return token || ''
 }
 
 // Computed properties

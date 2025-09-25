@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+import axios from 'axios'
 
 // Props
 interface Props {
@@ -136,25 +137,13 @@ const startCall = async () => {
       await peerConnection.setLocalDescription(offer)
       
       // Send offer via API
-      const response = await fetch('/api/webrtc/send-offer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-        },
-        body: JSON.stringify({
-          target_user_id: props.targetUserId,
-          sdp: offer,
-          call_type: props.callType
-        })
+      const response = await axios.post('/api/webrtc/send-offer', {
+        target_user_id: props.targetUserId,
+        sdp: offer,
+        call_type: props.callType
       })
       
-      if (!response.ok) {
-        throw new Error('Failed to send call offer')
-      }
-      
-      const data = await response.json()
-      console.log('Call offer sent successfully:', data)
+      console.log('Call offer sent successfully:', response.data)
       
       startCallTimer()
       emit('callStarted', callId.value)
@@ -200,23 +189,12 @@ const acceptCall = async () => {
       await peerConnection.setLocalDescription(answer)
       
       // Send answer via API
-      const response = await fetch('/api/webrtc/send-answer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-        },
-        body: JSON.stringify({
-          caller_user_id: props.incomingCall.caller_id,
-          call_id: props.incomingCall.call_id,
-          sdp: answer,
-          call_type: props.callType
-        })
+      const response = await axios.post('/api/webrtc/send-answer', {
+        caller_user_id: props.incomingCall.caller_id,
+        call_id: props.incomingCall.call_id,
+        sdp: answer,
+        call_type: props.callType
       })
-      
-      if (!response.ok) {
-        throw new Error('Failed to send call answer')
-      }
       
       startCallTimer()
       emit('callAccepted', props.incomingCall.call_id)
@@ -236,17 +214,10 @@ const declineCall = async () => {
   }
   
   try {
-    await fetch('/api/webrtc/end-call', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      },
-      body: JSON.stringify({
-        target_user_id: props.incomingCall.caller_id,
-        call_id: props.incomingCall.call_id,
-        reason: 'declined'
-      })
+    await axios.post('/api/webrtc/end-call', {
+      target_user_id: props.incomingCall.caller_id,
+      call_id: props.incomingCall.call_id,
+      reason: 'declined'
     })
     
     emit('callDeclined', props.incomingCall.call_id)
@@ -266,17 +237,10 @@ const endCall = async (reason: string = 'ended') => {
   
   try {
     if (props.targetUserId) {
-      await fetch('/api/webrtc/end-call', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-        },
-        body: JSON.stringify({
-          target_user_id: props.targetUserId,
-          call_id: callId.value,
-          reason
-        })
+      await axios.post('/api/webrtc/end-call', {
+        target_user_id: props.targetUserId,
+        call_id: callId.value,
+        reason
       })
     }
     
@@ -296,21 +260,14 @@ const sendIceCandidate = async (candidate: RTCIceCandidate) => {
   }
   
   try {
-    await fetch('/api/webrtc/send-ice-candidate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-      },
-      body: JSON.stringify({
-        target_user_id: props.targetUserId,
-        call_id: callId.value,
-        ice_candidate: {
-          candidate: candidate.candidate,
-          sdpMid: candidate.sdpMid,
-          sdpMLineIndex: candidate.sdpMLineIndex
-        }
-      })
+    await axios.post('/api/webrtc/send-ice-candidate', {
+      target_user_id: props.targetUserId,
+      call_id: callId.value,
+      ice_candidate: {
+        candidate: candidate.candidate,
+        sdpMid: candidate.sdpMid,
+        sdpMLineIndex: candidate.sdpMLineIndex
+      }
     })
     
   } catch (error) {

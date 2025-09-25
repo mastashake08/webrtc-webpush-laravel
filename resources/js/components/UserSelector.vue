@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { usePage } from '@inertiajs/vue3'
+import axios from 'axios'
 
 // Props
 interface Props {
@@ -44,20 +45,12 @@ const fetchUsers = async () => {
   isLoading.value = true
   
   try {
-    const response = await fetch('/api/users', {
-      headers: {
-        'X-CSRF-TOKEN': getCSRFToken()
-      }
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      users.value = data.users || data
-      
-      // Exclude current user if specified
-      if (props.excludeCurrentUser && currentUser.value) {
-        users.value = users.value.filter(user => user.id !== currentUser.value.id)
-      }
+    const response = await axios.get('/api/users')
+    users.value = response.data.users || response.data
+    
+    // Exclude current user if specified
+    if (props.excludeCurrentUser && currentUser.value) {
+      users.value = users.value.filter(user => user.id !== currentUser.value.id)
     }
   } catch (error) {
     console.error('Error fetching users:', error)
@@ -121,12 +114,6 @@ const getStatusColor = (status: string) => {
     case 'offline': return 'bg-gray-400'
     default: return 'bg-gray-400'
   }
-}
-
-// Utility function
-const getCSRFToken = (): string => {
-  const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
-  return token || ''
 }
 
 // Lifecycle
