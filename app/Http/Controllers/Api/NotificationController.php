@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\PushSubscription;
+use App\Models\User;
 use App\Services\WebPushService;
 use Faker\Generator as Faker;
 use Illuminate\Http\JsonResponse;
@@ -30,15 +31,22 @@ class NotificationController extends Controller
     public function subscribe(Request $request): JsonResponse
     {
         try {
+            Log::info('Push notification subscription request received', [
+                'user_id' => Auth::id(),
+                'endpoint' => substr($request->input('endpoint', ''), 0, 50) . '...'
+            ]);
+
             $request->validate([
                 'endpoint' => 'required|url',
                 'keys.p256dh' => 'required|string',
                 'keys.auth' => 'required|string',
             ]);
 
+            /** @var User $user */
             $user = Auth::user();
             
             if (!$user) {
+                Log::error('Push subscription failed: User not authenticated');
                 return response()->json([
                     'success' => false,
                     'message' => 'User not authenticated',
@@ -84,6 +92,7 @@ class NotificationController extends Controller
             'endpoint' => 'required|url',
         ]);
 
+        /** @var User $user */
         $user = Auth::user();
         
         $deleted = PushSubscription::where('user_id', $user->id)
@@ -98,6 +107,7 @@ class NotificationController extends Controller
 
     public function testNotification(Request $request): JsonResponse
     {
+        /** @var User $user */
         $user = Auth::user();
 
         // Increment badge count before sending notification
@@ -133,6 +143,7 @@ class NotificationController extends Controller
 
     public function clearBadge(Request $request)
     {
+        /** @var User $user */
         $user = Auth::user();
         $user->clearBadgeCount();
 

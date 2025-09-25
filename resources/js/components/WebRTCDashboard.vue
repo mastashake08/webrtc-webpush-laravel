@@ -209,11 +209,17 @@ const declineCall = () => {
 
 // End active call
 const endCall = (reason: string = 'ended') => {
-  console.log('Ending call:', reason)
+  console.log('🔚 WebRTCDashboard: Ending call with reason:', reason)
   
+  // Clear all call states
   activeCall.value = null
   incomingCall.value = null
   showCallInterface.value = false
+  
+  // Reset user selector state if needed
+  showUserSelector.value = false
+  
+  console.log('🔚 WebRTCDashboard: Call ended, states cleared')
 }
 
 // Clear notification

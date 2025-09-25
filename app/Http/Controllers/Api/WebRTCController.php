@@ -52,9 +52,18 @@ class WebRTCController extends Controller
         try {
             // Increment badge count for the target user
             $targetUser->incrementBadgeCount();
+            Log::info("Badge count incremented for user {$targetUserId}");
 
             // Send notification to the target user
+            Log::info("Sending WebRTC call offer notification", [
+                'caller_id' => $caller->id,
+                'target_user_id' => $targetUserId,
+                'call_type' => $callType,
+                'caller_name' => $caller->name
+            ]);
+
             $targetUser->notify(new WebRTCSendSDPNotification($sdpData, $targetUserId, $callType));
+            Log::info("WebRTC notification queued successfully");
 
             Log::info("WebRTC call offer sent", [
                 'caller_id' => $caller->id,

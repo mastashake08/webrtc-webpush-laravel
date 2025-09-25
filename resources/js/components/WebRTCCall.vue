@@ -244,24 +244,30 @@ const declineCall = async () => {
 
 // End call
 const endCall = async (reason: string = 'ended') => {
+  console.log('📞 WebRTCCall: endCall() called with reason:', reason)
+  
   if (!isCallActive.value && !isOutgoingCall.value) {
+    console.log('📞 WebRTCCall: No active call to end')
     return
   }
   
   try {
     if (props.targetUserId) {
+      console.log('📡 WebRTCCall: Sending end-call API request...')
       await axios.post('/api/webrtc/end-call', {
         target_user_id: props.targetUserId,
         call_id: callId.value,
         reason
       })
+      console.log('✅ WebRTCCall: End-call API request successful')
     }
     
+    console.log('📞 WebRTCCall: Emitting callEnded event and cleaning up...')
     emit('callEnded', reason)
     cleanup()
     
   } catch (error) {
-    console.error('Error ending call:', error)
+    console.error('❌ WebRTCCall: Error ending call:', error)
     cleanup()
   }
 }

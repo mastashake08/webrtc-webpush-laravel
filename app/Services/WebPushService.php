@@ -29,14 +29,20 @@ class WebPushService
     public function sendNotification(User $user, array $payload): bool
     {
         $subscriptions = $user->pushSubscriptions;
+        
+        Log::info("WebPushService: Attempting to send notification to user {$user->id}", [
+            'subscriptions_count' => $subscriptions->count(),
+            'payload_type' => $payload['data']['type'] ?? 'unknown'
+        ]);
 
         if ($subscriptions->isEmpty()) {
-            Log::info("No push subscriptions found for user {$user->id}");
+            Log::warning("No push subscriptions found for user {$user->id}");
             return false;
         }
 
         $success = true;
         $payloadJson = json_encode($payload);
+        Log::info("WebPushService: Notification payload", ['payload' => $payloadJson]);
 
         foreach ($subscriptions as $subscription) {
             try {
