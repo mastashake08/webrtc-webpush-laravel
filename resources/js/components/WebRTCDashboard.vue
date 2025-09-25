@@ -36,10 +36,28 @@ const initializeWebRTCDashboard = async () => {
 
 // Handle messages from service worker
 const handleServiceWorkerMessage = (event: MessageEvent) => {
-  console.log('Dashboard received SW message:', event.data)
+  console.log('🎯 Dashboard received SW message:', event.data)
   
-  if (event.data && event.data.type === 'PUSH_RECEIVED') {
-    handlePushNotification(event.data.payload)
+  if (event.data) {
+    switch (event.data.type) {
+      case 'PUSH_RECEIVED':
+        console.log('📨 Dashboard: Handling general push notification')
+        handlePushNotification(event.data.payload)
+        break
+        
+      case 'WEBRTC_INCOMING_CALL':
+        console.log('📞 Dashboard: Handling incoming WebRTC call directly')
+        handleIncomingCall(event.data.data)
+        break
+        
+      case 'WEBRTC_ICE_CANDIDATE':
+        console.log('🧊 Dashboard: Handling ICE candidate directly')
+        handleIceCandidate(event.data.data)
+        break
+        
+      default:
+        console.log('🤷 Dashboard: Unknown message type:', event.data.type)
+    }
   }
 }
 
@@ -99,7 +117,19 @@ const handlePushNotification = (payload: any) => {
 
 // Handle incoming WebRTC call
 const handleIncomingCall = (data: any) => {
-  console.log('Incoming WebRTC call:', data)
+  console.log('📞 Dashboard: Incoming WebRTC call data:', data)
+  console.log('📞 Dashboard: SDP data:', data.sdp)
+  console.log('📞 Dashboard: Caller info:', {
+    caller_id: data.caller_id,
+    caller_name: data.caller_name,
+    call_id: data.call_id,
+    call_type: data.call_type
+  })
+  
+  if (!data.sdp) {
+    console.error('❌ Dashboard: No SDP data in incoming call!')
+    return
+  }
   
   incomingCall.value = {
     caller_id: data.caller_id,
@@ -111,6 +141,7 @@ const handleIncomingCall = (data: any) => {
   }
   
   showCallInterface.value = true
+  console.log('📞 Dashboard: Incoming call state set, showing call interface')
 }
 
 // Handle call answer

@@ -74,7 +74,7 @@ self.addEventListener('activate', (event) => {
 
 // Push event handler - enhanced for iOS with badge support
 self.addEventListener('push', (event) => {
-    console.log('Push notification received:', event);
+    console.log('📨 SW: Push notification received:', event);
     
     let notificationData = {
         title: 'WebRTC Push',
@@ -91,6 +91,7 @@ self.addEventListener('push', (event) => {
     if (event.data) {
         try {
             const data = event.data.json();
+            console.log('📨 SW: Parsed push data:', data);
             notificationData = {
                 ...notificationData,
                 ...data,
@@ -100,16 +101,19 @@ self.addEventListener('push', (event) => {
                 tag: data.tag || 'webrtc-notification',
                 data: data.data || {}
             };
+            console.log('📨 SW: Final notification data:', notificationData);
         } catch (error) {
-            console.error('Error parsing push data:', error);
+            console.error('❌ SW: Error parsing push data:', error);
             notificationData.body = event.data.text();
         }
     }
 
     // Handle different WebRTC notification types
     if (notificationData.data && notificationData.data.type) {
+        console.log('📞 SW: Handling WebRTC notification type:', notificationData.data.type);
         switch (notificationData.data.type) {
             case 'webrtc_send_sdp':
+                console.log('📞 SW: Processing incoming call with SDP:', notificationData.data.sdp);
                 // Incoming call - always show with interaction required
                 notificationData.requireInteraction = true;
                 notificationData.silent = false;
@@ -125,6 +129,13 @@ self.addEventListener('push', (event) => {
                         icon: '/icons/reject-call.png'
                     }
                 ];
+                
+                // Send SDP data to active clients immediately
+                console.log('📞 SW: Sending call data to clients:', notificationData.data);
+                sendMessageToClients({
+                    type: 'WEBRTC_INCOMING_CALL',
+                    data: notificationData.data
+                });
                 break;
                 
             case 'webrtc_receive_sdp':
