@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import axios from 'axios'
 import WebRTCCall from './WebRTCCall.vue'
-import PushNotificationManager from './PushNotificationManager.vue'
 import UserSelector from './UserSelector.vue'
+import PushNotificationManager from './PushNotificationManager.vue'
 
 // Refs
 const webrtcCall = ref<InstanceType<typeof WebRTCCall>>()
@@ -67,7 +68,24 @@ const handleServiceWorkerMessage = (event: MessageEvent) => {
   }
 }
 
-// Handle push events when app is active
+// Test push notification function
+const testPushNotification = async () => {
+  try {
+    console.log('🔧 DEBUG: Testing push notification...')
+    
+    const response = await axios.post('/api/notifications/test', {
+      title: 'Test Push Notification',
+      message: 'This is a test push notification to verify the system is working'
+    })
+    
+    console.log('🔧 DEBUG: Test notification response:', response.data)
+  } catch (error: any) {
+    console.error('🔧 DEBUG: Test notification failed:', error)
+    if (error.response) {
+      console.error('🔧 DEBUG: Error response:', error.response.data)
+    }
+  }
+}
 const handlePushEvent = (event: any) => {
   console.log('Dashboard received push event:', event)
   
@@ -122,69 +140,115 @@ const handlePushNotification = (payload: any) => {
 }
 
 // Handle incoming WebRTC call
-const handleIncomingCall = (data: any) => {
+const handleIncomingCall = async (data: any) => {
   console.log('📞 Dashboard: Incoming WebRTC call data:', data)
-  console.log('📞 Dashboard: SDP data:', data.sdp)
+  console.log('📞 Dashboard: Session ID:', data.session_id)
   console.log('📞 Dashboard: Caller info:', {
     caller_id: data.caller_id,
     caller_name: data.caller_name,
-    call_id: data.call_id,
     call_type: data.call_type
   })
   
-  if (!data.sdp) {
-    console.error('❌ Dashboard: No SDP data in incoming call!')
+  if (!data.session_id) {
+    console.error('❌ Dashboard: No session ID in incoming call!')
     return
   }
-  
-  incomingCall.value = {
-    caller_id: data.caller_id,
-    caller_name: data.caller_name,
-    call_id: data.call_id,
-    call_type: data.call_type,
-    sdp: data.sdp,
-    timestamp: data.timestamp
+
+  try {
+    // Fetch SDP data from database using session ID
+    console.log('📞 Dashboard: Fetching SDP data for session:', data.session_id)
+    
+    const response = await axios.get('/api/webrtc/get-sdp-data', {
+      params: { session_id: data.session_id }
+    })
+    
+    if (!response.data.success) {
+      console.error('❌ Dashboard: Failed to fetch SDP data:', response.data.message)
+      return
+    }
+    
+    const sessionData = response.data.session
+    console.log('📞 Dashboard: Retrieved SDP data:', sessionData)
+    
+    incomingCall.value = {
+      caller_id: sessionData.caller_id,
+      caller_name: sessionData.caller_name,
+      call_id: sessionData.call_id,
+      call_type: sessionData.call_type,
+      sdp: sessionData.sdp,
+      timestamp: sessionData.timestamp,
+      session_id: sessionData.id
+    }
+    
+    showCallInterface.value = true
+    console.log('📞 Dashboard: Incoming call state set, showing call interface')
+    
+    // Also show the incoming call notification for foreground users
+    showIncomingCallModal.value = true
+    
+  } catch (error: any) {
+    console.error('❌ Dashboard: Error fetching SDP data:', error)
+    if (error.response) {
+      console.error('❌ Dashboard: API Error:', error.response.data)
+    }
   }
-  
-  showCallInterface.value = true
-  console.log('📞 Dashboard: Incoming call state set, showing call interface')
-  
-  // Also show the incoming call notification for foreground users
-  showIncomingCallModal.value = true
 }
 
 // 🔧 DEBUG: Handle auto-accept incoming call
-const handleAutoAcceptCall = (data: any) => {
+const handleAutoAcceptCall = async (data: any) => {
   console.log('🔧 DEBUG: Auto-accepting incoming WebRTC call:', data)
-  console.log('🔧 DEBUG: SDP data:', data.sdp)
+  console.log('🔧 DEBUG: Session ID:', data.session_id)
   console.log('🔧 DEBUG: Caller info:', {
     caller_id: data.caller_id,
     caller_name: data.caller_name,
-    call_id: data.call_id,
     call_type: data.call_type
   })
   
-  if (!data.sdp) {
-    console.error('❌ DEBUG: No SDP data in auto-accept call!')
+  if (!data.session_id) {
+    console.error('❌ DEBUG: No session ID in auto-accept call!')
     return
   }
-  
-  // Set incoming call data
-  incomingCall.value = {
-    caller_id: data.caller_id,
-    caller_name: data.caller_name,
-    call_id: data.call_id,
-    call_type: data.call_type,
-    sdp: data.sdp,
-    timestamp: data.timestamp
+
+  try {
+    // 🔧 NEW: Fetch SDP data from database using session ID
+    console.log('🔧 DEBUG: Fetching SDP data for session:', data.session_id)
+    
+    const response = await axios.get('/api/webrtc/get-sdp-data', {
+      params: { session_id: data.session_id }
+    })
+    
+    if (!response.data.success) {
+      console.error('❌ DEBUG: Failed to fetch SDP data:', response.data.message)
+      return
+    }
+    
+    const sessionData = response.data.session
+    console.log('🔧 DEBUG: Retrieved SDP data:', sessionData)
+    
+    // Set incoming call data with fetched SDP
+    incomingCall.value = {
+      caller_id: sessionData.caller_id,
+      caller_name: sessionData.caller_name,
+      call_id: sessionData.call_id,
+      call_type: sessionData.call_type,
+      sdp: sessionData.sdp,
+      timestamp: sessionData.timestamp,
+      session_id: sessionData.id
+    }
+    
+    console.log('🔧 DEBUG: Auto-accepting call immediately...')
+    
+    // Auto-accept after a short delay to allow for proper state setup
+    setTimeout(() => {
+      acceptCall()
+    }, 500)
+    
+  } catch (error: any) {
+    console.error('❌ DEBUG: Error fetching SDP data:', error)
+    if (error.response) {
+      console.error('❌ DEBUG: API Error:', error.response.data)
+    }
   }
-  
-  console.log('🔧 DEBUG: Auto-accepting call immediately...')
-  
-  // Auto-accept after a short delay to allow for proper state setup
-  setTimeout(() => {
-    acceptCall()
-  }, 500)
 }
 
 // Handle call answer
@@ -359,6 +423,17 @@ onUnmounted(() => {
 
 <template>
   <div class="webrtc-dashboard">
+    <!-- Debug Section -->
+    <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+      <h3 class="text-lg font-semibold text-yellow-800 mb-2">🔧 Debug Tools</h3>
+      <button 
+        @click="testPushNotification"
+        class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+      >
+        Test Push Notification
+      </button>
+    </div>
+    
     <!-- WebRTC Call Interface -->
     <WebRTCCall
       v-if="showCallInterface"

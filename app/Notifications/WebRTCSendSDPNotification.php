@@ -8,12 +8,13 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\DatabaseMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
 
 class WebRTCSendSDPNotification extends Notification implements ShouldQueue, WebPushNotification
 {
     use Queueable;
 
-    private array $sdpData;
+    private int $sessionId;
     private int $callerId;
     private string $callerName;
     private string $callType;
@@ -21,14 +22,14 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
     /**
      * Create a new notification instance.
      *
-     * @param array $sdpData The SDP offer/answer data
+     * @param int $sessionId The WebRTC session ID containing SDP data
      * @param int $callerId The user making the call
      * @param string $callerName The name of the caller
      * @param string $callType Type of call (video, audio, data)
      */
-    public function __construct(array $sdpData, int $callerId, string $callerName, string $callType = 'video')
+    public function __construct(int $sessionId, int $callerId, string $callerName, string $callType = 'video')
     {
-        $this->sdpData = $sdpData;
+        $this->sessionId = $sessionId;
         $this->callerId = $callerId;
         $this->callerName = $callerName;
         $this->callType = $callType;
@@ -78,9 +79,8 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
                 'caller_id' => $this->callerId,
                 'caller_name' => $this->callerName,
                 'target_user_id' => $notifiable->id,
-                'sdp' => $this->sdpData,
+                'session_id' => $this->sessionId, // Send session ID instead of SDP data
                 'timestamp' => now()->timestamp,
-                'call_id' => uniqid('call_', true),
                 'url' => '/call/incoming/' . $notifiable->id,
                 'badge' => $notifiable->getBadgeCount(),
             ]
@@ -102,8 +102,7 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
             'caller_id' => $this->callerId,
             'caller_name' => $this->callerName,
             'target_user_id' => $notifiable->id,
-            'sdp_data' => $this->sdpData,
-            'call_id' => uniqid('call_', true),
+            'session_id' => $this->sessionId, // Store session ID instead of SDP data
             'timestamp' => now()->timestamp,
         ]);
     }

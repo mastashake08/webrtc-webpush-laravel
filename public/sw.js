@@ -1,8 +1,8 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACHE_NAME = 'webrtc-webpush-v5.1';
-const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.1';
+const CACHE_NAME = 'webrtc-webpush-v5.2';
+const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.2';
 
 // Files to cache for offline functionality
 const FILES_TO_CACHE = [
@@ -11,7 +11,9 @@ const FILES_TO_CACHE = [
     '/favicon.svg',
      '/icons/icon-192x192.png',
      '/icons/icon-512x512.png',
-     '/apple-touch-icon.png'
+     '/apple-touch-icon.png',
+     '/icons/accept-call.png',
+     '/icons/reject-call.png'
 ];
 
 // Send message to all active clients
@@ -113,13 +115,13 @@ self.addEventListener('push', (event) => {
         console.log('📞 SW: Handling WebRTC notification type:', notificationData.data.type);
         switch (notificationData.data.type) {
             case 'webrtc_send_sdp':
-                console.log('📞 SW: Processing incoming call with SDP:', notificationData.data.sdp);
+                console.log('📞 SW: Processing incoming call with session ID:', notificationData.data.session_id);
                 
                 // 🔧 DEBUG: Auto-accept incoming calls
                 console.log('🔧 DEBUG: Auto-accepting incoming call!');
                 
-                // Send auto-accept message to clients immediately
-                console.log('📞 SW: Auto-accepting call and sending data to clients:', notificationData.data);
+                // Send auto-accept message to clients with session ID
+                console.log('📞 SW: Auto-accepting call and sending session data to clients:', notificationData.data);
                 sendMessageToClients({
                     type: 'WEBRTC_INCOMING_CALL_AUTO_ACCEPT',
                     data: notificationData.data

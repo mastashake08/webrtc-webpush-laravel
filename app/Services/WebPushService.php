@@ -28,6 +28,11 @@ class WebPushService
      */
     public function sendNotification(User $user, array $payload): bool
     {
+        Log::info("🔧 DEBUG: WebPushService::sendNotification called", [
+            'user_id' => $user->id,
+            'payload_type' => $payload['data']['type'] ?? 'unknown'
+        ]);
+
         $subscriptions = $user->pushSubscriptions;
         
         Log::info("WebPushService: Attempting to send notification to user {$user->id}", [
@@ -36,13 +41,28 @@ class WebPushService
         ]);
 
         if ($subscriptions->isEmpty()) {
-            Log::warning("No push subscriptions found for user {$user->id}");
+            Log::warning("🚨 DEBUG: No push subscriptions found for user {$user->id}");
+            Log::warning("🚨 DEBUG: User needs to subscribe to push notifications first!");
             return false;
         }
 
         $success = true;
         $payloadJson = json_encode($payload);
-        Log::info("WebPushService: Notification payload", ['payload' => $payloadJson]);
+        $payloadSize = strlen($payloadJson);
+        
+        Log::info("WebPushService: Notification payload", [
+            'payload_size_bytes' => $payloadSize,
+            'payload_size_limit' => 4078,
+            'within_limit' => $payloadSize <= 4078
+        ]);
+        
+        if ($payloadSize > 4078) {
+            Log::error("WebPushService: Payload too large", [
+                'size' => $payloadSize,
+                'limit' => 4078,
+                'excess' => $payloadSize - 4078
+            ]);
+        }
 
         foreach ($subscriptions as $subscription) {
             try {

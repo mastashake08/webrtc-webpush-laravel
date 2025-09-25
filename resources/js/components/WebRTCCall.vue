@@ -155,6 +155,13 @@ const startCall = async () => {
         sdp_type: offer.type
       })
       
+      // 🔧 DEBUG: Log the full request being sent
+      console.log('🔧 DEBUG: Full API request payload:', {
+        target_user_id: props.targetUserId,
+        sdp: offer,
+        call_type: props.callType
+      })
+      
       // Send offer via API
       const response = await axios.post('/api/webrtc/send-offer', {
         target_user_id: props.targetUserId,
@@ -163,13 +170,30 @@ const startCall = async () => {
       })
       
       console.log('✅ WebRTCCall: Call offer sent successfully:', response.data)
+      console.log('🔧 DEBUG: Response status:', response.status)
+      console.log('🔧 DEBUG: Response headers:', response.headers)
       
       startCallTimer()
       emit('callStarted', callId.value)
     }
     
-  } catch (error) {
-    console.error('Error starting call:', error)
+  } catch (error: any) {
+    console.error('❌ WebRTCCall: Error starting call:', error)
+    
+    // 🔧 DEBUG: Enhanced error logging
+    if (error.response) {
+      console.error('🔧 DEBUG: API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        headers: error.response.headers
+      })
+    } else if (error.request) {
+      console.error('🔧 DEBUG: Network Error - No response received:', error.request)
+    } else {
+      console.error('🔧 DEBUG: Request setup error:', error.message)
+    }
+    
     emit('error', 'Failed to start call')
     cleanup()
   }

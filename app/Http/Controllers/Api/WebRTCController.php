@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\WebRTCSession;
 use App\Notifications\WebRTCReceiveSDPNotification;
 use App\Notifications\WebRTCSendSDPNotification;
 use Illuminate\Http\JsonResponse;
@@ -11,6 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
+use Carbon\Carbon;
 
 class WebRTCController extends Controller
 {
@@ -19,6 +21,12 @@ class WebRTCController extends Controller
      */
     public function sendOffer(Request $request): JsonResponse
     {
+        // 🔧 DEBUG: Log that we reached the controller
+        Log::info("🔧 DEBUG: sendOffer controller method called", [
+            'authenticated_user' => Auth::check() ? Auth::id() : 'Not authenticated',
+            'request_data' => $request->all()
+        ]);
+
         $request->validate([
             'target_user_id' => 'required|integer|exists:users,id',
             'sdp' => 'required|array',
@@ -59,37 +67,53 @@ class WebRTCController extends Controller
         }
 
         try {
+            // Generate unique call ID
+            $callId = 'call_' . uniqid() . '_' . time();
+            
+            // 🔧 NEW: Save SDP data to database instead of sending in push notification
+            $session = WebRTCSession::create([
+                'call_id' => $callId,
+                'caller_id' => $caller->id,
+                'target_user_id' => $targetUserId,
+                'call_type' => $callType,
+                'sdp_offer' => $sdpData,
+                'status' => 'pending',
+                'expires_at' => Carbon::now()->addMinutes(5), // 5 minute timeout
+            ]);
+            
+            Log::info("🔧 DEBUG: SDP session saved to database", [
+                'session_id' => $session->id,
+                'call_id' => $callId,
+                'sdp_size' => strlen(json_encode($sdpData))
+            ]);
+
             // Increment badge count for the target user
             $targetUser->incrementBadgeCount();
             Log::info("Badge count incremented for user {$targetUserId}");
 
-            // Send notification to the target user
+            // Send notification to the target user (now with session ID instead of SDP data)
             Log::info("Sending WebRTC call offer notification", [
                 'caller_id' => $caller->id,
                 'target_user_id' => $targetUserId,
                 'call_type' => $callType,
-                'caller_name' => $caller->name
+                'caller_name' => $caller->name,
+                'session_id' => $session->id
             ]);
 
-            // 🔧 DEBUG: Log the SDP data being sent in notification
-            Log::info("🔧 DEBUG: SDP data being sent to notification", [
-                'sdp_data' => $sdpData,
-                'has_sdp_content' => !empty($sdpData['sdp']),
-                'sdp_type' => $sdpData['type'] ?? 'missing'
-            ]);
-
-            $targetUser->notify(new WebRTCSendSDPNotification($sdpData, $caller->id, $caller->name, $callType));
+            $targetUser->notify(new WebRTCSendSDPNotification($session->id, $caller->id, $caller->name, $callType));
             Log::info("WebRTC notification queued successfully");
 
             Log::info("WebRTC call offer sent", [
                 'caller_id' => $caller->id,
                 'target_user_id' => $targetUserId,
-                'call_type' => $callType
+                'call_type' => $callType,
+                'call_id' => $callId
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Call offer sent successfully',
+                'call_id' => $callId,
                 'caller_name' => $caller->name,
                 'target_user_id' => $targetUserId
             ]);
@@ -104,6 +128,80 @@ class WebRTCController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to send call offer'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get SDP data by session ID
+     */
+    public function getSdpData(Request $request): JsonResponse
+    {
+        $request->validate([
+            'session_id' => 'required|integer|exists:webrtc_sessions,id'
+        ]);
+
+        $user = Auth::user();
+        $sessionId = $request->session_id;
+
+        try {
+            // Find the session and verify user is involved
+            $session = WebRTCSession::where('id', $sessionId)
+                ->where(function ($query) use ($user) {
+                    $query->where('caller_id', $user->id)
+                          ->orWhere('target_user_id', $user->id);
+                })
+                ->where('status', 'pending')
+                ->first();
+
+            if (!$session) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session not found or expired'
+                ], 404);
+            }
+
+            // Check if session is expired
+            if ($session->isExpired()) {
+                $session->markAsEnded();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Session has expired'
+                ], 410);
+            }
+
+            Log::info("🔧 DEBUG: Retrieving SDP data for session", [
+                'session_id' => $sessionId,
+                'user_id' => $user->id,
+                'caller_id' => $session->caller_id,
+                'target_user_id' => $session->target_user_id
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'session' => [
+                    'id' => $session->id,
+                    'call_id' => $session->call_id,
+                    'caller_id' => $session->caller_id,
+                    'caller_name' => $session->caller->name,
+                    'target_user_id' => $session->target_user_id,
+                    'call_type' => $session->call_type,
+                    'sdp' => $session->sdp_offer,
+                    'timestamp' => $session->created_at->timestamp,
+                    'expires_at' => $session->expires_at->timestamp,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to retrieve SDP data: ' . $e->getMessage(), [
+                'session_id' => $sessionId,
+                'user_id' => $user->id,
+                'error' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve session data'
             ], 500);
         }
     }
