@@ -103,10 +103,15 @@ const handlePushEvent = (event: any) => {
 const handlePushNotification = (payload: any) => {
   console.log('📨 Dashboard: Handling push notification:', payload)
   
+  if (!payload) {
+    console.error('❌ Dashboard: No payload provided for push notification!')
+    return
+  }
+  
   // Add to local notifications array for immediate display
   notifications.value.unshift({
     id: Date.now(),
-    type: payload.data?.type || 'general',
+    type: (payload.data && payload.data.type) || 'general',
     data: payload,
     created_at: new Date(),
     read_at: null,
@@ -142,12 +147,21 @@ const handlePushNotification = (payload: any) => {
       default:
         console.log('Unknown notification type:', payload.data.type)
     }
+  } else {
+    console.log('📨 Dashboard: Push notification has no data property')
   }
 }
 
 // Handle incoming WebRTC call
 const handleIncomingCall = async (data: any) => {
   console.log('📞 Dashboard: Incoming WebRTC call data:', data)
+  
+  // Validate required data
+  if (!data) {
+    console.error('❌ Dashboard: No data provided for incoming call!')
+    return
+  }
+  
   console.log('📞 Dashboard: Session ID:', data.session_id)
   console.log('📞 Dashboard: Caller info:', {
     caller_id: data.caller_id,
@@ -176,20 +190,26 @@ const handleIncomingCall = async (data: any) => {
     const sessionData = response.data.session
     console.log('📞 Dashboard: Retrieved SDP data:', sessionData)
     
+    // Validate session data
+    if (!sessionData) {
+      console.error('❌ Dashboard: No session data returned from API!')
+      return
+    }
+    
     incomingCall.value = {
-      caller_id: sessionData.caller_id,
-      caller_name: sessionData.caller_name,
-      call_id: sessionData.call_id,
-      call_type: sessionData.call_type,
+      caller_id: sessionData.caller_id || data.caller_id,
+      caller_name: sessionData.caller_name || data.caller_name || 'Unknown Caller',
+      call_id: sessionData.call_id || data.call_id || `call_${Date.now()}`,
+      call_type: sessionData.call_type || data.call_type || 'video',
       sdp: sessionData.sdp,
-      timestamp: sessionData.timestamp,
-      session_id: sessionData.id
+      timestamp: sessionData.timestamp || new Date().toISOString(),
+      session_id: sessionData.id || data.session_id
     }
     
     showCallInterface.value = true
     console.log('📞 Dashboard: Incoming call state set, showing call interface')
     
-    // Also show the incoming call notification for foreground users
+    // Show the incoming call modal for foreground users
     showIncomingCallModal.value = true
     
   } catch (error: any) {
@@ -204,11 +224,18 @@ const handleIncomingCall = async (data: any) => {
 const handleCallAnswer = (data: any) => {
   console.log('Received call answer:', data)
   
+  if (!data) {
+    console.error('❌ Dashboard: No data provided for call answer!')
+    return
+  }
+  
   if (activeCall.value && activeCall.value.call_id === data.call_id) {
-    // Pass the answer to the WebRTC component
-    const callComponent = document.querySelector('.webrtc-call-component') as any
-    if (callComponent && callComponent.handleRemoteAnswer) {
-      callComponent.handleRemoteAnswer(data.sdp)
+    // Pass the answer to the WebRTC component using ref
+    const webrtcCallComponent = webrtcCall.value
+    if (webrtcCallComponent && webrtcCallComponent.handleRemoteAnswer) {
+      webrtcCallComponent.handleRemoteAnswer(data.sdp)
+    } else {
+      console.error('❌ Dashboard: WebRTCCall component not found or handleRemoteAnswer method missing')
     }
   }
 }
@@ -217,11 +244,18 @@ const handleCallAnswer = (data: any) => {
 const handleIceCandidate = (data: any) => {
   console.log('Received ICE candidate:', data)
   
+  if (!data) {
+    console.error('❌ Dashboard: No data provided for ICE candidate!')
+    return
+  }
+  
   if (activeCall.value && activeCall.value.call_id === data.call_id) {
-    // Pass the ICE candidate to the WebRTC component
-    const callComponent = document.querySelector('.webrtc-call-component') as any
-    if (callComponent && callComponent.handleRemoteIceCandidate) {
-      callComponent.handleRemoteIceCandidate(data.ice_candidate)
+    // Pass the ICE candidate to the WebRTC component using ref
+    const webrtcCallComponent = webrtcCall.value
+    if (webrtcCallComponent && webrtcCallComponent.handleRemoteIceCandidate) {
+      webrtcCallComponent.handleRemoteIceCandidate(data.ice_candidate)
+    } else {
+      console.error('❌ Dashboard: WebRTCCall component not found or handleRemoteIceCandidate method missing')
     }
   }
 }
@@ -350,6 +384,8 @@ const getNotificationIcon = (type: string) => {
 
 // Get notification title from different notification formats
 const getNotificationTitle = (notification: any) => {
+  if (!notification) return 'Notification'
+  
   // Database notification format
   if (notification.data && notification.data.title) {
     return notification.data.title
@@ -364,7 +400,7 @@ const getNotificationTitle = (notification: any) => {
   }
   
   // Fallback based on type
-  const type = notification.type || notification.data?.type
+  const type = notification.type || (notification.data && notification.data.type) || 'default'
   switch (type) {
     case 'webrtc_send_sdp':
       return 'Incoming Call'
@@ -379,6 +415,8 @@ const getNotificationTitle = (notification: any) => {
 
 // Get notification message from different notification formats
 const getNotificationMessage = (notification: any) => {
+  if (!notification) return 'You have a new notification'
+  
   // Database notification format
   if (notification.data && notification.data.message) {
     return notification.data.message
@@ -393,14 +431,14 @@ const getNotificationMessage = (notification: any) => {
   }
   
   // Fallback based on type and data
-  const type = notification.type || notification.data?.type
-  const data = notification.data
+  const type = notification.type || (notification.data && notification.data.type) || 'default'
+  const data = notification.data || {}
   
   switch (type) {
     case 'webrtc_send_sdp':
-      return `${data?.caller_name || 'Someone'} is calling you`
+      return `${data.caller_name || 'Someone'} is calling you`
     case 'webrtc_receive_sdp':
-      return `${data?.responder_name || 'Someone'} answered your call`
+      return `${data.responder_name || 'Someone'} answered your call`
     case 'webrtc_call_ended':
       return 'Call has ended'
     default:
@@ -409,19 +447,32 @@ const getNotificationMessage = (notification: any) => {
 }
 
 // Format notification time
-const formatNotificationTime = (timestamp: Date | string) => {
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
+const formatNotificationTime = (timestamp: Date | string | null | undefined) => {
+  if (!timestamp) return 'just now'
   
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  if (hours < 24) return `${hours}h ago`
-  return `${days}d ago`
+  try {
+    const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return 'just now'
+    }
+    
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    
+    const minutes = Math.floor(diff / 60000)
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(diff / 86400000)
+    
+    if (minutes < 1) return 'just now'
+    if (minutes < 60) return `${minutes}m ago`
+    if (hours < 24) return `${hours}h ago`
+    return `${days}d ago`
+  } catch (error) {
+    console.error('Error formatting notification time:', error)
+    return 'just now'
+  }
 }
 
 // Clear notification

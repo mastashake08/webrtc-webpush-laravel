@@ -604,45 +604,6 @@ defineExpose({
 
 <template>
   <div class="webrtc-component">
-    <!-- Incoming Call Modal -->
-    <div
-      v-if="isIncomingCall"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-    >
-      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4">
-        <div class="text-center">
-          <div class="mb-4">
-            <div class="w-16 h-16 bg-green-100 dark:bg-green-900 rounded-full mx-auto flex items-center justify-center mb-3">
-              <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
-              </svg>
-            </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-              Incoming {{ callType }} call
-            </h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              {{ callerName }} is calling you
-            </p>
-          </div>
-          
-          <div class="flex space-x-3">
-            <button
-              @click="declineCall"
-              class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
-            >
-              Decline
-            </button>
-            <button
-              @click="acceptCall"
-              class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors"
-            >
-              Accept
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Call Interface -->
     <div v-if="isCallActive || isOutgoingCall" class="call-interface">
       <!-- Video containers -->

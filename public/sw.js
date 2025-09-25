@@ -1,7 +1,34 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACHE_NAME = 'webrtc-webpush-v5.2';
+const CACH            case 'webrtc_send_sdp':
+                console.log('📞 SW: Processing incoming call with session ID:', notificationData.data.session_id);
+                
+                // Validate required data for incoming calls
+                if (!notificationData.data.session_id) {
+                    console.error('❌ SW: Missing session_id for incoming call!');
+                    return;
+                }
+                
+                // Send normal incoming call message to clients with validated data
+                console.log('📞 SW: Sending incoming call data to clients:', notificationData.data);
+                sendMessageToClients({
+                    type: 'WEBRTC_INCOMING_CALL',
+                    data: {
+                        session_id: notificationData.data.session_id,
+                        caller_id: notificationData.data.caller_id,
+                        caller_name: notificationData.data.caller_name || 'Unknown Caller',
+                        call_type: notificationData.data.call_type || 'video',
+                        call_id: notificationData.data.call_id
+                    }
+                });
+                
+                // Show incoming call notification
+                notificationData.title = '📞 Incoming Call';
+                notificationData.body = `${notificationData.data.caller_name || 'Unknown'} is calling you`;
+                notificationData.requireInteraction = true;
+                notificationData.silent = false;
+                break;-webpush-v5.2';
 const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.2';
 
 // Files to cache for offline functionality
