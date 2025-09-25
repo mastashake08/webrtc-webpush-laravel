@@ -289,7 +289,7 @@ const acceptCall = async () => {
       
       try {
         const sdpOffer = parseSdpData(props.incomingCall.sdp, 'incoming call offer')
-        const remoteDesc = new RTCSessionDescription(sdpOffer)
+        const remoteDesc = new RTCSessionDescription(JSON.parse(props.incomingCall.sdp))
         await peerConnection.setRemoteDescription(remoteDesc)
       } catch (error: any) {
         console.error('❌ WebRTCCall: Failed to set remote description from props:', error)
