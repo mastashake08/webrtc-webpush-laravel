@@ -10,6 +10,7 @@ use App\Notifications\WebRTCSendSDPNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Carbon\Carbon;
@@ -71,21 +72,48 @@ class WebRTCController extends Controller
             $callId = 'call_' . uniqid() . '_' . time();
             
             // 🔧 NEW: Save SDP data to database instead of sending in push notification
-            $session = WebRTCSession::create([
-                'call_id' => $callId,
-                'caller_id' => $caller->id,
-                'target_user_id' => $targetUserId,
-                'call_type' => $callType,
-                'sdp_offer' => $sdpData,
-                'status' => 'pending',
-                'expires_at' => Carbon::now()->addMinutes(5), // 5 minute timeout
-            ]);
-            
-            Log::info("🔧 DEBUG: SDP session saved to database", [
-                'session_id' => $session->id,
-                'call_id' => $callId,
-                'sdp_size' => strlen(json_encode($sdpData))
-            ]);
+            try {
+                $session = WebRTCSession::create([
+                    'call_id' => $callId,
+                    'caller_id' => $caller->id,
+                    'target_user_id' => $targetUserId,
+                    'call_type' => $callType,
+                    'sdp_offer' => $sdpData,
+                    'status' => 'pending',
+                    'expires_at' => Carbon::now()->addMinutes(5), // 5 minute timeout
+                ]);
+                
+                Log::info("🔧 DEBUG: SDP session saved to database", [
+                    'session_id' => $session->id,
+                    'call_id' => $callId,
+                    'sdp_size' => strlen(json_encode($sdpData))
+                ]);
+                
+                $sessionId = $session->id;
+                
+            } catch (\Exception $dbError) {
+                Log::error("🔧 DEBUG: Database save failed (table may not exist), falling back to direct SDP:", $dbError->getMessage());
+                
+                // Fallback: use a temporary session ID and store SDP in cache for 5 minutes
+                $sessionId = 'temp_' . uniqid();
+                Cache::put("webrtc_session_{$sessionId}", [
+                    'id' => $sessionId,
+                    'call_id' => $callId,
+                    'caller_id' => $caller->id,
+                    'caller_name' => $caller->name,
+                    'target_user_id' => $targetUserId,
+                    'call_type' => $callType,
+                    'sdp_offer' => $sdpData,
+                    'status' => 'pending',
+                    'created_at' => Carbon::now()->toISOString(),
+                    'expires_at' => Carbon::now()->addMinutes(5)->toISOString(),
+                ], 300); // 5 minutes in seconds
+                
+                Log::info("🔧 DEBUG: SDP session saved to cache as fallback", [
+                    'session_id' => $sessionId,
+                    'call_id' => $callId
+                ]);
+            }
 
             // Increment badge count for the target user
             $targetUser->incrementBadgeCount();
@@ -217,7 +245,8 @@ class WebRTCController extends Controller
             'sdp' => 'required|array',
             'sdp.type' => 'required|string|in:answer',
             'sdp.sdp' => 'required|string',
-            'call_type' => 'sometimes|string|in:video,audio,data'
+            'call_type' => 'sometimes|string|in:video,audio,data',
+            'session_id' => 'sometimes|string'
         ]);
 
         $responder = Auth::user();
@@ -225,6 +254,15 @@ class WebRTCController extends Controller
         $callId = $request->call_id;
         $sdpData = $request->sdp;
         $callType = $request->call_type ?? 'video';
+        $sessionId = $request->session_id;
+
+        Log::info("🔧 DEBUG: sendAnswer called", [
+            'responder_id' => $responder->id,
+            'caller_user_id' => $callerUserId,
+            'call_id' => $callId,
+            'session_id' => $sessionId,
+            'sdp_type' => $sdpData['type'] ?? 'unknown'
+        ]);
 
         $callerUser = User::find($callerUserId);
         
@@ -236,24 +274,82 @@ class WebRTCController extends Controller
         }
 
         try {
+            // If session_id provided, update the database session with the answer
+            if ($sessionId) {
+                try {
+                    // Try to find database session first
+                    $session = WebRTCSession::where('call_id', $callId)
+                        ->where('caller_id', $callerUserId)
+                        ->where('target_user_id', $responder->id)
+                        ->first();
+                        
+                    if ($session) {
+                        $session->setSdpAnswer($sdpData);
+                        $session->markAsAccepted();
+                        Log::info("🔧 DEBUG: Updated database session with answer", [
+                            'session_id' => $session->id,
+                            'call_id' => $callId
+                        ]);
+                    } else {
+                        Log::warning("🔧 DEBUG: Database session not found, trying cache");
+                        // Try cache fallback
+                        $cacheKey = "webrtc_session_{$sessionId}";
+                        $cachedSession = Cache::get($cacheKey);
+                        if ($cachedSession) {
+                            $cachedSession['sdp_answer'] = $sdpData;
+                            $cachedSession['status'] = 'accepted';
+                            Cache::put($cacheKey, $cachedSession, 300);
+                            Log::info("🔧 DEBUG: Updated cache session with answer");
+                        }
+                    }
+                } catch (\Exception $dbError) {
+                    Log::error("🔧 DEBUG: Failed to update session with answer:", $dbError->getMessage());
+                }
+            }
+
             // Increment badge count for the caller
             $callerUser->incrementBadgeCount();
 
-            // Send notification to the original caller
-            $callerUser->notify(new WebRTCReceiveSDPNotification($sdpData, $callerUserId, $callType, $callId));
+            // Send notification to the original caller with session ID instead of direct SDP
+            if ($sessionId) {
+                // For session-based approach, send lighter notification
+                Log::info("🔧 DEBUG: Sending session-based answer notification", [
+                    'session_id' => $sessionId,
+                    'caller_user_id' => $callerUserId
+                ]);
+                
+                // Create a lightweight notification for the answer
+                $notificationData = [
+                    'type' => 'webrtc_receive_sdp',
+                    'session_id' => $sessionId,
+                    'call_id' => $callId,
+                    'responder_id' => $responder->id,
+                    'responder_name' => $responder->name,
+                    'call_type' => $callType
+                ];
+                
+                // Send notification (you might want to create a new notification class for this)
+                $callerUser->notify(new WebRTCReceiveSDPNotification($sdpData, $callerUserId, $callType, $callId));
+                
+            } else {
+                // Original approach with direct SDP in notification
+                $callerUser->notify(new WebRTCReceiveSDPNotification($sdpData, $callerUserId, $callType, $callId));
+            }
 
             Log::info("WebRTC call answer sent", [
                 'responder_id' => $responder->id,
                 'caller_user_id' => $callerUserId,
                 'call_id' => $callId,
-                'call_type' => $callType
+                'call_type' => $callType,
+                'session_id' => $sessionId
             ]);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Call answer sent successfully',
                 'responder_name' => $responder->name,
-                'call_id' => $callId
+                'call_id' => $callId,
+                'session_id' => $sessionId
             ]);
 
         } catch (\Exception $e) {

@@ -28,6 +28,44 @@ class NotificationController extends Controller
         ]);
     }
 
+    public function getNotifications(): JsonResponse
+    {
+        try {
+            /** @var \App\Models\User $user */
+            $user = Auth::user();
+            
+            // Get the latest 20 notifications from the database
+            $notifications = $user->notifications()
+                ->orderBy('created_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(function ($notification) {
+                    return [
+                        'id' => $notification->id,
+                        'type' => $notification->type,
+                        'data' => $notification->data,
+                        'read_at' => $notification->read_at,
+                        'created_at' => $notification->created_at,
+                        'time_ago' => $notification->created_at->diffForHumans(),
+                    ];
+                });
+
+            return response()->json([
+                'success' => true,
+                'notifications' => $notifications
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch notifications: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch notifications',
+                'notifications' => []
+            ], 500);
+        }
+    }
+
     public function subscribe(Request $request): JsonResponse
     {
         try {

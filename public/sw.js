@@ -117,20 +117,17 @@ self.addEventListener('push', (event) => {
             case 'webrtc_send_sdp':
                 console.log('📞 SW: Processing incoming call with session ID:', notificationData.data.session_id);
                 
-                // 🔧 DEBUG: Auto-accept incoming calls
-                console.log('🔧 DEBUG: Auto-accepting incoming call!');
-                
-                // Send auto-accept message to clients with session ID
-                console.log('📞 SW: Auto-accepting call and sending session data to clients:', notificationData.data);
+                // Send normal incoming call message to clients
+                console.log('📞 SW: Sending incoming call data to clients:', notificationData.data);
                 sendMessageToClients({
-                    type: 'WEBRTC_INCOMING_CALL_AUTO_ACCEPT',
+                    type: 'WEBRTC_INCOMING_CALL',
                     data: notificationData.data
                 });
                 
-                // Still show notification for debugging visibility
-                notificationData.title = '🔧 DEBUG: Auto-Accepting Call';
-                notificationData.body = `Auto-accepting call from ${notificationData.data.caller_name || 'Unknown'}`;
-                notificationData.requireInteraction = false;
+                // Show incoming call notification
+                notificationData.title = '� Incoming Call';
+                notificationData.body = `${notificationData.data.caller_name || 'Unknown'} is calling you`;
+                notificationData.requireInteraction = true;
                 notificationData.silent = false;
                 break;
                 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import axios from 'axios'
 import WebRTCCall from './WebRTCCall.vue'
 import UserSelector from './UserSelector.vue'
@@ -34,6 +34,9 @@ const initializeWebRTCDashboard = async () => {
 
   // Listen for browser notifications (when app is in foreground)
   window.addEventListener('push', handlePushEvent)
+  
+  // Fetch initial notifications from database
+  await fetchNotifications()
 }
 
 // Handle messages from service worker
@@ -52,11 +55,6 @@ const handleServiceWorkerMessage = (event: MessageEvent) => {
         handleIncomingCall(event.data.data)
         break
         
-      case 'WEBRTC_INCOMING_CALL_AUTO_ACCEPT':
-        console.log('🔧 DEBUG: Dashboard handling auto-accept call!')
-        handleAutoAcceptCall(event.data.data)
-        break
-        
       case 'WEBRTC_ICE_CANDIDATE':
         console.log('🧊 Dashboard: Handling ICE candidate directly')
         handleIceCandidate(event.data.data)
@@ -68,21 +66,23 @@ const handleServiceWorkerMessage = (event: MessageEvent) => {
   }
 }
 
-// Test push notification function
-const testPushNotification = async () => {
+// Fetch notifications from database
+const fetchNotifications = async () => {
   try {
-    console.log('🔧 DEBUG: Testing push notification...')
+    console.log('📨 Dashboard: Fetching notifications from database...')
     
-    const response = await axios.post('/api/notifications/test', {
-      title: 'Test Push Notification',
-      message: 'This is a test push notification to verify the system is working'
-    })
+    const response = await axios.get('/api/notifications')
     
-    console.log('🔧 DEBUG: Test notification response:', response.data)
+    if (response.data.success) {
+      notifications.value = response.data.notifications || []
+      console.log('📨 Dashboard: Loaded', notifications.value.length, 'notifications from database')
+    } else {
+      console.error('❌ Dashboard: Failed to fetch notifications:', response.data.message)
+    }
   } catch (error: any) {
-    console.error('🔧 DEBUG: Test notification failed:', error)
+    console.error('❌ Dashboard: Error fetching notifications:', error)
     if (error.response) {
-      console.error('🔧 DEBUG: Error response:', error.response.data)
+      console.error('❌ Dashboard: API Error:', error.response.data)
     }
   }
 }
@@ -101,14 +101,20 @@ const handlePushEvent = (event: any) => {
 
 // Handle incoming push notification
 const handlePushNotification = (payload: any) => {
-  console.log('Handling push notification:', payload)
+  console.log('📨 Dashboard: Handling push notification:', payload)
   
-  // Add to notifications list
+  // Add to local notifications array for immediate display
   notifications.value.unshift({
     id: Date.now(),
-    ...payload,
-    timestamp: new Date()
+    type: payload.data?.type || 'general',
+    data: payload,
+    created_at: new Date(),
+    read_at: null,
+    time_ago: 'just now'
   })
+  
+  // Refresh from database to get proper formatting and ensure consistency
+  fetchNotifications()
 
   // Handle different notification types
   if (payload.data) {
@@ -194,63 +200,6 @@ const handleIncomingCall = async (data: any) => {
   }
 }
 
-// 🔧 DEBUG: Handle auto-accept incoming call
-const handleAutoAcceptCall = async (data: any) => {
-  console.log('🔧 DEBUG: Auto-accepting incoming WebRTC call:', data)
-  console.log('🔧 DEBUG: Session ID:', data.session_id)
-  console.log('🔧 DEBUG: Caller info:', {
-    caller_id: data.caller_id,
-    caller_name: data.caller_name,
-    call_type: data.call_type
-  })
-  
-  if (!data.session_id) {
-    console.error('❌ DEBUG: No session ID in auto-accept call!')
-    return
-  }
-
-  try {
-    // 🔧 NEW: Fetch SDP data from database using session ID
-    console.log('🔧 DEBUG: Fetching SDP data for session:', data.session_id)
-    
-    const response = await axios.get('/api/webrtc/get-sdp-data', {
-      params: { session_id: data.session_id }
-    })
-    
-    if (!response.data.success) {
-      console.error('❌ DEBUG: Failed to fetch SDP data:', response.data.message)
-      return
-    }
-    
-    const sessionData = response.data.session
-    console.log('🔧 DEBUG: Retrieved SDP data:', sessionData)
-    
-    // Set incoming call data with fetched SDP
-    incomingCall.value = {
-      caller_id: sessionData.caller_id,
-      caller_name: sessionData.caller_name,
-      call_id: sessionData.call_id,
-      call_type: sessionData.call_type,
-      sdp: sessionData.sdp,
-      timestamp: sessionData.timestamp,
-      session_id: sessionData.id
-    }
-    
-    console.log('🔧 DEBUG: Auto-accepting call immediately...')
-    
-    // Auto-accept after a short delay to allow for proper state setup
-    setTimeout(() => {
-      acceptCall()
-    }, 500)
-    
-  } catch (error: any) {
-    console.error('❌ DEBUG: Error fetching SDP data:', error)
-    if (error.response) {
-      console.error('❌ DEBUG: API Error:', error.response.data)
-    }
-  }
-}
-
 // Handle call answer
 const handleCallAnswer = (data: any) => {
   console.log('Received call answer:', data)
@@ -322,17 +271,37 @@ const startCall = (userId: number, callType: string) => {
 const acceptCall = () => {
   if (!incomingCall.value) return
   
-  console.log('Accepting call:', incomingCall.value.call_id)
+  console.log('📞 Dashboard: Accepting call:', incomingCall.value.call_id)
+  console.log('📞 Dashboard: Call data:', incomingCall.value)
   
+  // Set the active call state for the WebRTCCall component
   activeCall.value = {
     caller_user_id: incomingCall.value.caller_id,
     call_id: incomingCall.value.call_id,
     call_type: incomingCall.value.call_type,
-    status: 'incoming_accepted'
+    status: 'incoming_accepted',
+    sdp: incomingCall.value.sdp, // Include the SDP data
+    session_id: incomingCall.value.session_id
   }
   
-  // Clear incoming call state and hide modal
+  // Clear incoming call modal but keep call interface active
   showIncomingCallModal.value = false
+  
+  // Trigger the accept call in the WebRTCCall component
+  nextTick(() => {
+    const webrtcCallComponent = webrtcCall.value
+    if (webrtcCallComponent && webrtcCallComponent.acceptIncomingCall) {
+      console.log('✅ Dashboard: Found WebRTCCall component, calling acceptIncomingCall()')
+      webrtcCallComponent.acceptIncomingCall(incomingCall.value)
+    } else {
+      console.error('❌ Dashboard: WebRTCCall component not found or acceptIncomingCall method missing', {
+        component: webrtcCallComponent,
+        hasAcceptMethod: webrtcCallComponent?.acceptIncomingCall
+      })
+    }
+  })
+  
+  // Clear incoming call after passing to component
   incomingCall.value = null
 }
 
@@ -363,6 +332,98 @@ const endCall = (reason: string = 'ended') => {
   console.log('🔚 WebRTCDashboard: Call ended, states cleared')
 }
 
+// Get notification icon based on type
+const getNotificationIcon = (type: string) => {
+  switch (type) {
+    case 'webrtc_send_sdp':
+      return '📞'
+    case 'webrtc_receive_sdp':
+      return '✅'
+    case 'webrtc_ice_candidate':
+      return '🧊'
+    case 'webrtc_call_ended':
+      return '📵'
+    default:
+      return '🔔'
+  }
+}
+
+// Get notification title from different notification formats
+const getNotificationTitle = (notification: any) => {
+  // Database notification format
+  if (notification.data && notification.data.title) {
+    return notification.data.title
+  }
+  if (notification.data && notification.data.message) {
+    return notification.data.message.split('.')[0] // Use first sentence as title
+  }
+  
+  // Push notification format
+  if (notification.title) {
+    return notification.title
+  }
+  
+  // Fallback based on type
+  const type = notification.type || notification.data?.type
+  switch (type) {
+    case 'webrtc_send_sdp':
+      return 'Incoming Call'
+    case 'webrtc_receive_sdp':
+      return 'Call Answered'
+    case 'webrtc_call_ended':
+      return 'Call Ended'
+    default:
+      return 'Notification'
+  }
+}
+
+// Get notification message from different notification formats
+const getNotificationMessage = (notification: any) => {
+  // Database notification format
+  if (notification.data && notification.data.message) {
+    return notification.data.message
+  }
+  
+  // Push notification format
+  if (notification.body) {
+    return notification.body
+  }
+  if (notification.message) {
+    return notification.message
+  }
+  
+  // Fallback based on type and data
+  const type = notification.type || notification.data?.type
+  const data = notification.data
+  
+  switch (type) {
+    case 'webrtc_send_sdp':
+      return `${data?.caller_name || 'Someone'} is calling you`
+    case 'webrtc_receive_sdp':
+      return `${data?.responder_name || 'Someone'} answered your call`
+    case 'webrtc_call_ended':
+      return 'Call has ended'
+    default:
+      return 'You have a new notification'
+  }
+}
+
+// Format notification time
+const formatNotificationTime = (timestamp: Date | string) => {
+  const date = typeof timestamp === 'string' ? new Date(timestamp) : timestamp
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}
+
 // Clear notification
 const clearNotification = (notificationId: number) => {
   const index = notifications.value.findIndex((n: any) => n.id === notificationId)
@@ -374,38 +435,6 @@ const clearNotification = (notificationId: number) => {
 // Clear all notifications
 const clearAllNotifications = () => {
   notifications.value = []
-}
-
-// Format notification time
-const formatNotificationTime = (timestamp: Date) => {
-  const now = new Date()
-  const diff = now.getTime() - timestamp.getTime()
-  
-  if (diff < 60000) { // Less than 1 minute
-    return 'Just now'
-  } else if (diff < 3600000) { // Less than 1 hour
-    return `${Math.floor(diff / 60000)}m ago`
-  } else if (diff < 86400000) { // Less than 1 day
-    return `${Math.floor(diff / 3600000)}h ago`
-  } else {
-    return timestamp.toLocaleDateString()
-  }
-}
-
-// Get notification icon
-const getNotificationIcon = (type: string) => {
-  switch (type) {
-    case 'webrtc_send_sdp':
-      return '📹'
-    case 'webrtc_receive_sdp':
-      return '📞'
-    case 'webrtc_ice_candidate':
-      return '🔗'
-    case 'webrtc_call_ended':
-      return '📴'
-    default:
-      return '🔔'
-  }
 }
 
 // Lifecycle
@@ -423,17 +452,6 @@ onUnmounted(() => {
 
 <template>
   <div class="webrtc-dashboard">
-    <!-- Debug Section -->
-    <div class="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <h3 class="text-lg font-semibold text-yellow-800 mb-2">🔧 Debug Tools</h3>
-      <button 
-        @click="testPushNotification"
-        class="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
-      >
-        Test Push Notification
-      </button>
-    </div>
-    
     <!-- WebRTC Call Interface -->
     <WebRTCCall
       v-if="showCallInterface"
@@ -526,17 +544,17 @@ onUnmounted(() => {
                 <div class="flex items-start justify-between">
                   <div class="flex items-start space-x-3">
                     <div class="text-2xl">
-                      {{ getNotificationIcon(notification.data?.type || 'default') }}
+                      {{ getNotificationIcon(notification.type || notification.data?.type || 'default') }}
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="font-medium text-gray-900 dark:text-white">
-                        {{ notification.title }}
+                        {{ getNotificationTitle(notification) }}
                       </p>
                       <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                        {{ notification.body }}
+                        {{ getNotificationMessage(notification) }}
                       </p>
                       <p class="text-xs text-gray-500 dark:text-gray-500 mt-2">
-                        {{ formatNotificationTime(notification.timestamp) }}
+                        {{ notification.time_ago || formatNotificationTime(notification.created_at || notification.timestamp) }}
                       </p>
                     </div>
                   </div>
@@ -609,7 +627,7 @@ onUnmounted(() => {
               </svg>
             </div>
             <h3 class="text-lg font-semibold text-gray-900 mb-1">Incoming Call</h3>
-            <p class="text-gray-600">{{ incomingCall.callerName || 'Unknown Caller' }}</p>
+            <p class="text-gray-600">{{ incomingCall.caller_name || 'Unknown Caller' }}</p>
           </div>
           
           <div class="flex gap-4 justify-center">

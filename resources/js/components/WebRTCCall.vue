@@ -92,11 +92,25 @@ const getUserMedia = async (): Promise<MediaStream> => {
   }
   
   try {
+    console.log('📹 WebRTCCall: Requesting user media with constraints:', constraints)
     const stream = await navigator.mediaDevices.getUserMedia(constraints)
     localStream = stream
+    console.log('📹 WebRTCCall: Got user media stream:', stream)
     
+    // Ensure the video element is updated
     if (localVideo.value) {
+      console.log('📹 WebRTCCall: Setting local video srcObject')
       localVideo.value.srcObject = stream
+      
+      // Force play the video
+      try {
+        await localVideo.value.play()
+        console.log('📹 WebRTCCall: Local video playing successfully')
+      } catch (playError) {
+        console.warn('📹 WebRTCCall: Video play failed (this is often normal):', playError)
+      }
+    } else {
+      console.warn('📹 WebRTCCall: localVideo ref not available yet')
     }
     
     return stream
@@ -122,6 +136,7 @@ const startCall = async () => {
   try {
     console.log('🔄 WebRTCCall: Setting outgoing call state')
     isOutgoingCall.value = true
+    isCallActive.value = true // Set this early to show local video
     connectionStatus.value = 'connecting'
     
     // Generate a unique call ID for outgoing calls
@@ -130,15 +145,19 @@ const startCall = async () => {
       console.log('📞 WebRTCCall: Generated call ID:', callId.value)
     }
     
-    // Get user media
+    // Get user media FIRST
+    console.log('📹 WebRTCCall: Getting user media...')
     await getUserMedia()
+    console.log('📹 WebRTCCall: User media obtained successfully')
     
     // Initialize peer connection
     initializePeerConnection()
     
     // Add local stream to peer connection
     if (localStream && peerConnection) {
+      console.log('📞 WebRTCCall: Adding tracks to peer connection')
       localStream.getTracks().forEach(track => {
+        console.log('📞 WebRTCCall: Adding track:', track.kind)
         peerConnection!.addTrack(track, localStream!)
       })
     }
@@ -245,6 +264,78 @@ const acceptCall = async () => {
     
   } catch (error) {
     console.error('Error accepting call:', error)
+    emit('error', 'Failed to accept call')
+    cleanup()
+  }
+}
+
+// Accept incoming call with explicit data (called from dashboard)
+const acceptIncomingCall = async (callData: any) => {
+  console.log('📞 WebRTCCall: acceptIncomingCall called with data:', callData)
+  
+  if (!callData) {
+    console.error('❌ WebRTCCall: No call data provided to acceptIncomingCall')
+    return
+  }
+  
+  try {
+    isIncomingCall.value = false
+    isCallActive.value = true
+    connectionStatus.value = 'connecting'
+    callId.value = callData.call_id
+    callerName.value = callData.caller_name || 'Unknown'
+    
+    console.log('📞 WebRTCCall: Getting user media for answer...')
+    // Get user media
+    await getUserMedia()
+    
+    // Initialize peer connection
+    initializePeerConnection()
+    
+    // Add local stream to peer connection
+    if (localStream && peerConnection) {
+      console.log('📞 WebRTCCall: Adding local tracks to peer connection')
+      localStream.getTracks().forEach(track => {
+        console.log('📞 WebRTCCall: Adding track:', track.kind)
+        peerConnection!.addTrack(track, localStream!)
+      })
+    }
+    
+    // Set remote description (the offer)
+    if (peerConnection && callData.sdp) {
+      console.log('📞 WebRTCCall: Setting remote description and creating answer...')
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(callData.sdp))
+      
+      // Create answer
+      const answer = await peerConnection.createAnswer()
+      await peerConnection.setLocalDescription(answer)
+      
+      console.log('📞 WebRTCCall: Sending answer via API...', {
+        caller_user_id: callData.caller_id,
+        call_id: callData.call_id,
+        session_id: callData.session_id
+      })
+      
+      // Send answer via API
+      const response = await axios.post('/api/webrtc/send-answer', {
+        caller_user_id: callData.caller_id,
+        call_id: callData.call_id,
+        sdp: answer,
+        call_type: callData.call_type,
+        session_id: callData.session_id
+      })
+      
+      console.log('✅ WebRTCCall: Answer sent successfully:', response.data)
+      
+      startCallTimer()
+      emit('callAccepted', callData.call_id)
+    }
+    
+  } catch (error: any) {
+    console.error('❌ WebRTCCall: Error accepting call:', error)
+    if (error.response) {
+      console.error('❌ WebRTCCall: API Error:', error.response.data)
+    }
     emit('error', 'Failed to accept call')
     cleanup()
   }
@@ -440,8 +531,41 @@ const cleanup = () => {
 }
 
 // Computed properties
-const showLocalVideo = computed(() => props.callType === 'video' && localStream)
+const showLocalVideo = computed(() => {
+  const shouldShow = props.callType === 'video' && localStream !== null && isCallActive.value
+  console.log('📹 WebRTCCall: showLocalVideo computed:', {
+    callType: props.callType,
+    hasLocalStream: localStream !== null,
+    isCallActive: isCallActive.value,
+    shouldShow
+  })
+  return shouldShow
+})
 const showRemoteVideo = computed(() => props.callType === 'video' && remoteStream)
+
+// Watch for local stream changes and update video element
+watch(() => localStream, (newStream) => {
+  console.log('📹 WebRTCCall: Local stream changed:', newStream)
+  if (newStream && localVideo.value) {
+    console.log('📹 WebRTCCall: Updating local video element with new stream')
+    localVideo.value.srcObject = newStream
+    localVideo.value.play().catch(error => {
+      console.warn('📹 WebRTCCall: Video play failed:', error)
+    })
+  }
+})
+
+// Watch for video element becoming available
+watch(() => localVideo.value, (videoElement) => {
+  console.log('📹 WebRTCCall: Local video element changed:', videoElement)
+  if (videoElement && localStream) {
+    console.log('📹 WebRTCCall: Setting stream on newly available video element')
+    videoElement.srcObject = localStream
+    videoElement.play().catch(error => {
+      console.warn('📹 WebRTCCall: Video play failed:', error)
+    })
+  }
+})
 
 // Watch for incoming call changes
 watch(() => props.incomingCall, (newCall: any) => {
@@ -468,6 +592,7 @@ onUnmounted(() => {
 defineExpose({
   startCall,
   acceptCall,
+  acceptIncomingCall,
   declineCall,
   endCall,
   toggleVideo,

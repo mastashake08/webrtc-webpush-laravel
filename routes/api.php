@@ -58,6 +58,7 @@ Route::get('/auth-test', function (Request $request) {
 Route::middleware(['auth'])->group(function () {
     // Notification endpoints
     Route::get('/notifications/vapid-key', [NotificationController::class, 'getVapidPublicKey']);
+    Route::get('/notifications', [NotificationController::class, 'getNotifications']);
     Route::post('/notifications/subscribe', [NotificationController::class, 'subscribe']);
     Route::post('/notifications/unsubscribe', [NotificationController::class, 'unsubscribe']);
     Route::post('/notifications/test', [NotificationController::class, 'testNotification']);
