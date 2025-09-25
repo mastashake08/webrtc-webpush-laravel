@@ -114,28 +114,22 @@ self.addEventListener('push', (event) => {
         switch (notificationData.data.type) {
             case 'webrtc_send_sdp':
                 console.log('📞 SW: Processing incoming call with SDP:', notificationData.data.sdp);
-                // Incoming call - always show with interaction required
-                notificationData.requireInteraction = true;
-                notificationData.silent = false;
-                notificationData.actions = notificationData.actions || [
-                    {
-                        action: 'accept_call',
-                        title: 'Accept',
-                        icon: '/icons/accept-call.png'
-                    },
-                    {
-                        action: 'reject_call',
-                        title: 'Decline',
-                        icon: '/icons/reject-call.png'
-                    }
-                ];
                 
-                // Send SDP data to active clients immediately
-                console.log('📞 SW: Sending call data to clients:', notificationData.data);
+                // 🔧 DEBUG: Auto-accept incoming calls
+                console.log('🔧 DEBUG: Auto-accepting incoming call!');
+                
+                // Send auto-accept message to clients immediately
+                console.log('📞 SW: Auto-accepting call and sending data to clients:', notificationData.data);
                 sendMessageToClients({
-                    type: 'WEBRTC_INCOMING_CALL',
+                    type: 'WEBRTC_INCOMING_CALL_AUTO_ACCEPT',
                     data: notificationData.data
                 });
+                
+                // Still show notification for debugging visibility
+                notificationData.title = '🔧 DEBUG: Auto-Accepting Call';
+                notificationData.body = `Auto-accepting call from ${notificationData.data.caller_name || 'Unknown'}`;
+                notificationData.requireInteraction = false;
+                notificationData.silent = false;
                 break;
                 
             case 'webrtc_receive_sdp':

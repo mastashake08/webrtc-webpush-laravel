@@ -32,6 +32,15 @@ class WebRTCController extends Controller
         $sdpData = $request->sdp;
         $callType = $request->call_type ?? 'video';
 
+        // 🔧 DEBUG: Log the incoming SDP offer data
+        Log::info("🔧 DEBUG: Received SDP offer", [
+            'caller_id' => $caller->id,
+            'target_user_id' => $targetUserId,
+            'sdp_type' => $sdpData['type'] ?? 'unknown',
+            'sdp_length' => strlen($sdpData['sdp'] ?? ''),
+            'call_type' => $callType
+        ]);
+
         // Don't allow calling yourself
         if ($caller->id === $targetUserId) {
             return response()->json([
@@ -60,6 +69,13 @@ class WebRTCController extends Controller
                 'target_user_id' => $targetUserId,
                 'call_type' => $callType,
                 'caller_name' => $caller->name
+            ]);
+
+            // 🔧 DEBUG: Log the SDP data being sent in notification
+            Log::info("🔧 DEBUG: SDP data being sent to notification", [
+                'sdp_data' => $sdpData,
+                'has_sdp_content' => !empty($sdpData['sdp']),
+                'sdp_type' => $sdpData['type'] ?? 'missing'
             ]);
 
             $targetUser->notify(new WebRTCSendSDPNotification($sdpData, $caller->id, $caller->name, $callType));

@@ -51,6 +51,11 @@ const handleServiceWorkerMessage = (event: MessageEvent) => {
         handleIncomingCall(event.data.data)
         break
         
+      case 'WEBRTC_INCOMING_CALL_AUTO_ACCEPT':
+        console.log('🔧 DEBUG: Dashboard handling auto-accept call!')
+        handleAutoAcceptCall(event.data.data)
+        break
+        
       case 'WEBRTC_ICE_CANDIDATE':
         console.log('🧊 Dashboard: Handling ICE candidate directly')
         handleIceCandidate(event.data.data)
@@ -146,6 +151,40 @@ const handleIncomingCall = (data: any) => {
   
   // Also show the incoming call notification for foreground users
   showIncomingCallModal.value = true
+}
+
+// 🔧 DEBUG: Handle auto-accept incoming call
+const handleAutoAcceptCall = (data: any) => {
+  console.log('🔧 DEBUG: Auto-accepting incoming WebRTC call:', data)
+  console.log('🔧 DEBUG: SDP data:', data.sdp)
+  console.log('🔧 DEBUG: Caller info:', {
+    caller_id: data.caller_id,
+    caller_name: data.caller_name,
+    call_id: data.call_id,
+    call_type: data.call_type
+  })
+  
+  if (!data.sdp) {
+    console.error('❌ DEBUG: No SDP data in auto-accept call!')
+    return
+  }
+  
+  // Set incoming call data
+  incomingCall.value = {
+    caller_id: data.caller_id,
+    caller_name: data.caller_name,
+    call_id: data.call_id,
+    call_type: data.call_type,
+    sdp: data.sdp,
+    timestamp: data.timestamp
+  }
+  
+  console.log('🔧 DEBUG: Auto-accepting call immediately...')
+  
+  // Auto-accept after a short delay to allow for proper state setup
+  setTimeout(() => {
+    acceptCall()
+  }, 500)
 }
 
 // Handle call answer
