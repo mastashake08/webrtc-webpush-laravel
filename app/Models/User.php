@@ -4,14 +4,14 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Laravel\Fortify\TwoFactorAuthenticatable;
-
+use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, Notifiable, HasApiTokens;
 
     /**
      * The attributes that are mass assignable.
@@ -22,6 +22,7 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        'notification_badge_count',
     ];
 
     /**
@@ -45,5 +46,34 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
+
+    /**
+     * Increment the notification badge count
+     */
+    public function incrementBadgeCount(): void
+    {
+        $this->increment('notification_badge_count');
+    }
+
+    /**
+     * Clear the notification badge count
+     */
+    public function clearBadgeCount(): void
+    {
+        $this->update(['notification_badge_count' => 0]);
+    }
+
+    /**
+     * Get the current badge count
+     */
+    public function getBadgeCount(): int
+    {
+        return $this->notification_badge_count ?? 0;
     }
 }
