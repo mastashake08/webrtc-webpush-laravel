@@ -109,12 +109,18 @@ const getUserMedia = async (): Promise<MediaStream> => {
 
 // Send call offer
 const startCall = async () => {
+  console.log('📞 WebRTCCall: startCall() method called')
+  console.log('📞 WebRTCCall: targetUserId:', props.targetUserId)
+  console.log('📞 WebRTCCall: callType:', props.callType)
+  
   if (!props.targetUserId) {
+    console.error('❌ WebRTCCall: No target user specified')
     emit('error', 'No target user specified')
     return
   }
   
   try {
+    console.log('🔄 WebRTCCall: Setting outgoing call state')
     isOutgoingCall.value = true
     connectionStatus.value = 'connecting'
     
@@ -133,8 +139,15 @@ const startCall = async () => {
     
     // Create offer
     if (peerConnection) {
+      console.log('🎯 WebRTCCall: Creating WebRTC offer...')
       const offer = await peerConnection.createOffer()
       await peerConnection.setLocalDescription(offer)
+      
+      console.log('📡 WebRTCCall: Sending offer to API...', {
+        target_user_id: props.targetUserId,
+        call_type: props.callType,
+        sdp_type: offer.type
+      })
       
       // Send offer via API
       const response = await axios.post('/api/webrtc/send-offer', {
@@ -143,7 +156,7 @@ const startCall = async () => {
         call_type: props.callType
       })
       
-      console.log('Call offer sent successfully:', response.data)
+      console.log('✅ WebRTCCall: Call offer sent successfully:', response.data)
       
       startCallTimer()
       emit('callStarted', callId.value)

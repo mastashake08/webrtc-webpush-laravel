@@ -73,8 +73,16 @@ const selectUser = (user: any) => {
 
 // Initiate call
 const initiateCall = () => {
-  if (!selectedUser.value) return
+  console.log('🎯 UserSelector: initiateCall() called')
+  console.log('👤 UserSelector: selectedUser:', selectedUser.value)
+  console.log('📞 UserSelector: callType:', callType.value)
   
+  if (!selectedUser.value) {
+    console.error('❌ UserSelector: No user selected for call')
+    return
+  }
+  
+  console.log('🚀 UserSelector: Emitting callInitiated event:', selectedUser.value.id, callType.value)
   emit('callInitiated', selectedUser.value.id, callType.value)
 }
 

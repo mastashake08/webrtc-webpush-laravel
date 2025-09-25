@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import WebRTCCall from './WebRTCCall.vue'
 import PushNotificationManager from './PushNotificationManager.vue'
 import UserSelector from './UserSelector.vue'
+
+// Refs
+const webrtcCall = ref<InstanceType<typeof WebRTCCall>>()
 
 // State
 const activeCall = ref<any>(null)
@@ -147,7 +150,7 @@ const handleCallEnded = (data: any) => {
 
 // Start new call
 const startCall = (userId: number, callType: string) => {
-  console.log('Starting call to user:', userId, 'type:', callType)
+  console.log('🚀 WebRTCDashboard: Starting call to user:', userId, 'type:', callType)
   
   activeCall.value = {
     target_user_id: userId,
@@ -158,6 +161,23 @@ const startCall = (userId: number, callType: string) => {
   
   showCallInterface.value = true
   showUserSelector.value = false
+  
+  console.log('📱 WebRTCDashboard: Call interface shown, activeCall:', activeCall.value)
+  
+  // Start the actual WebRTC call after the component is rendered
+  nextTick(() => {
+    console.log('⏭️ WebRTCDashboard: nextTick called, looking for webrtcCall component')
+    const webrtcCallComponent = webrtcCall.value
+    if (webrtcCallComponent && webrtcCallComponent.startCall) {
+      console.log('✅ WebRTCDashboard: Found WebRTCCall component, calling startCall()')
+      webrtcCallComponent.startCall()
+    } else {
+      console.error('❌ WebRTCDashboard: WebRTCCall component not found or startCall method missing', {
+        component: webrtcCallComponent,
+        hasStartCall: webrtcCallComponent?.startCall
+      })
+    }
+  })
 }
 
 // Accept incoming call
