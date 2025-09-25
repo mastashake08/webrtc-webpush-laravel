@@ -13,6 +13,7 @@ const incomingCall = ref<any>(null)
 const notifications = ref<any[]>([])
 const showCallInterface = ref(false)
 const showUserSelector = ref(false)
+const showIncomingCallModal = ref(false)
 
 // Service worker for handling push notifications
 let serviceWorker: ServiceWorker | null = null
@@ -142,6 +143,9 @@ const handleIncomingCall = (data: any) => {
   
   showCallInterface.value = true
   console.log('📞 Dashboard: Incoming call state set, showing call interface')
+  
+  // Also show the incoming call notification for foreground users
+  showIncomingCallModal.value = true
 }
 
 // Handle call answer
@@ -224,7 +228,8 @@ const acceptCall = () => {
     status: 'incoming_accepted'
   }
   
-  // Clear incoming call state
+  // Clear incoming call state and hide modal
+  showIncomingCallModal.value = false
   incomingCall.value = null
 }
 
@@ -234,6 +239,7 @@ const declineCall = () => {
   
   console.log('Declining call:', incomingCall.value.call_id)
   
+  showIncomingCallModal.value = false
   incomingCall.value = null
   showCallInterface.value = false
 }
@@ -246,6 +252,7 @@ const endCall = (reason: string = 'ended') => {
   activeCall.value = null
   incomingCall.value = null
   showCallInterface.value = false
+  showIncomingCallModal.value = false
   
   // Reset user selector state if needed
   showUserSelector.value = false
@@ -469,6 +476,48 @@ onUnmounted(() => {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
               </svg>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Incoming Call Modal -->
+    <div 
+      v-if="showIncomingCallModal && incomingCall" 
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+    >
+      <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+        <div class="text-center">
+          <div class="mb-4">
+            <div class="w-20 h-20 mx-auto bg-blue-500 rounded-full flex items-center justify-center mb-2">
+              <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 mb-1">Incoming Call</h3>
+            <p class="text-gray-600">{{ incomingCall.callerName || 'Unknown Caller' }}</p>
+          </div>
+          
+          <div class="flex gap-4 justify-center">
+            <button
+              @click="declineCall"
+              class="px-6 py-3 bg-red-500 text-white rounded-full hover:bg-red-600 flex items-center gap-2"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+              Decline
+            </button>
+            
+            <button
+              @click="acceptCall"
+              class="px-6 py-3 bg-green-500 text-white rounded-full hover:bg-green-600 flex items-center gap-2"
+            >
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z"></path>
+              </svg>
+              Accept
+            </button>
           </div>
         </div>
       </div>
