@@ -35,6 +35,15 @@
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        
+        {{-- PWA Manifest --}}
+        <link rel="manifest" href="/manifest.json">
+        <meta name="theme-color" content="#16a34a">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="apple-mobile-web-app-title" content="{{ config('app.name') }}">
+        <meta name="msapplication-TileColor" content="#16a34a">
+        <meta name="msapplication-TileImage" content="/icons/icon-144x144.png">
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
@@ -44,5 +53,21 @@
     </head>
     <body class="font-sans antialiased">
         @inertia
+        
+        {{-- Service Worker Registration --}}
+        <script>
+            // Register service worker for PWA functionality
+            if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                    navigator.serviceWorker.register('/sw.js')
+                        .then(function(registration) {
+                            console.log('ServiceWorker registration successful:', registration.scope);
+                        })
+                        .catch(function(error) {
+                            console.log('ServiceWorker registration failed:', error);
+                        });
+                });
+            }
+        </script>
     </body>
 </html>

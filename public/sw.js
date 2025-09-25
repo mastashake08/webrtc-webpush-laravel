@@ -12,8 +12,32 @@ const FILES_TO_CACHE = [
     '/icons/icon-192x192.png',
     '/icons/icon-512x512.png',
     '/apple-touch-icon.png',
-    // Add other static assets as needed
-];
+    // Add function clearServerBadgeCount() {
+    // Clear badge count on the server
+    fetch('/api/notifications/clear-badge', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        credentials: 'same-origin'
+    }).then(response => {
+        if (response.ok) {
+            console.log('Server badge count cleared');
+        }
+    }).catch(err => {
+        console.log('Error clearing server badge count:', err);
+    });
+}
+
+// Send message to all active clients
+function sendMessageToClients(message) {
+    return clients.matchAll({ includeUncontrolled: true }).then(clientList => {
+        clientList.forEach(client => {
+            client.postMessage(message);
+        });
+    });
+}
 
 // URLs that should be cached with network-first strategy
 const DATA_URLS = [
@@ -130,11 +154,11 @@ self.addEventListener('push', (event) => {
     console.log('Push notification received:', event);
     
     let notificationData = {
-        title: 'Cash App',
+        title: 'WebRTC Push',
         body: 'You have a new notification',
         icon: '/favicon.ico',
         badge: '/favicon.ico',
-        tag: 'lucy-notification',
+        tag: 'webrtc-notification',
         requireInteraction: false, // iOS prefers false
         silent: false,
         data: {}
@@ -150,7 +174,7 @@ self.addEventListener('push', (event) => {
                 // Ensure we have iOS-compatible options
                 icon: data.icon || '/favicon.ico',
                 badge: data.badge || '/favicon.ico',
-                tag: data.tag || 'lucy-notification',
+                tag: data.tag || 'webrtc-notification',
                 data: data.data || {}
             };
         } catch (error) {
@@ -159,17 +183,69 @@ self.addEventListener('push', (event) => {
         }
     }
 
+    // Handle different WebRTC notification types
+    if (notificationData.data && notificationData.data.type) {
+        switch (notificationData.data.type) {
+            case 'webrtc_send_sdp':
+                // Incoming call - always show with interaction required
+                notificationData.requireInteraction = true;
+                notificationData.silent = false;
+                notificationData.actions = notificationData.actions || [
+                    {
+                        action: 'accept_call',
+                        title: 'Accept',
+                        icon: '/icons/accept-call.png'
+                    },
+                    {
+                        action: 'reject_call',
+                        title: 'Decline',
+                        icon: '/icons/reject-call.png'
+                    }
+                ];
+                break;
+                
+            case 'webrtc_receive_sdp':
+                // Call answered - normal notification
+                notificationData.requireInteraction = false;
+                notificationData.silent = false;
+                break;
+                
+            case 'webrtc_ice_candidate':
+                // ICE candidate - silent notification
+                notificationData.silent = true;
+                notificationData.requireInteraction = false;
+                // Don't show visual notification for ICE candidates
+                sendMessageToClients({
+                    type: 'WEBRTC_ICE_CANDIDATE',
+                    data: notificationData.data
+                });
+                return; // Exit early, don't show visual notification
+                
+            case 'webrtc_call_ended':
+                // Call ended - brief notification
+                notificationData.requireInteraction = false;
+                notificationData.silent = false;
+                break;
+        }
+    }
+
     // iOS-specific adjustments
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     if (isIOS) {
         // iOS notifications work better with simpler options
-        notificationData.requireInteraction = false;
-        notificationData.silent = false;
+        notificationData.requireInteraction = notificationData.data?.type === 'webrtc_send_sdp';
+        notificationData.silent = notificationData.data?.type === 'webrtc_ice_candidate';
     }
 
     // Update PWA badge count if supported
     const badgeCount = notificationData.data.badge || 1;
     updateBadgeCount(badgeCount);
+
+    // Send message to active clients (for foreground notifications)
+    sendMessageToClients({
+        type: 'PUSH_RECEIVED',
+        payload: notificationData
+    });
 
     const promiseChain = self.registration.showNotification(
         notificationData.title,
@@ -201,12 +277,54 @@ self.addEventListener('notificationclick', (event) => {
     const notificationData = event.notification.data || {};
     let urlToOpen = '/dashboard';
 
-    if (notificationData.url) {
-        urlToOpen = notificationData.url;
-    } else if (notificationData.type === 'money_received') {
-        urlToOpen = '/dashboard?tab=transactions';
-    } else if (notificationData.type === 'money_request') {
-        urlToOpen = '/dashboard?tab=requests';
+    // Handle WebRTC specific actions
+    if (notificationData.type && notificationData.type.startsWith('webrtc_')) {
+        switch (notificationData.type) {
+            case 'webrtc_send_sdp':
+                // Incoming call
+                if (event.action === 'accept_call') {
+                    urlToOpen = `/call/accept/${notificationData.call_id}`;
+                } else if (event.action === 'reject_call') {
+                    // Send API request to decline call
+                    fetch('/api/webrtc/end-call', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            target_user_id: notificationData.caller_id,
+                            call_id: notificationData.call_id,
+                            reason: 'declined'
+                        })
+                    }).catch(err => console.error('Failed to decline call:', err));
+                    
+                    clearServerBadgeCount();
+                    return; // Don't open any window
+                } else {
+                    urlToOpen = `/call/incoming/${notificationData.call_id}`;
+                }
+                break;
+                
+            case 'webrtc_receive_sdp':
+                urlToOpen = `/call/active/${notificationData.call_id}`;
+                break;
+                
+            case 'webrtc_call_ended':
+                urlToOpen = '/dashboard';
+                break;
+                
+            default:
+                urlToOpen = notificationData.url || '/dashboard';
+        }
+    } else {
+        // Handle legacy notification types
+        if (notificationData.url) {
+            urlToOpen = notificationData.url;
+        } else if (notificationData.type === 'money_received') {
+            urlToOpen = '/dashboard?tab=transactions';
+        } else if (notificationData.type === 'money_request') {
+            urlToOpen = '/dashboard?tab=requests';
+        }
     }
 
     const promiseChain = clients.matchAll({
@@ -220,6 +338,13 @@ self.addEventListener('notificationclick', (event) => {
                 client.navigate(urlToOpen);
                 // Clear badge on server when app is opened
                 clearServerBadgeCount();
+                
+                // Send message to client about the notification action
+                client.postMessage({
+                    type: 'NOTIFICATION_ACTION',
+                    action: event.action,
+                    data: notificationData
+                });
                 return;
             }
         }
