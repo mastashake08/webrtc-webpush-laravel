@@ -30,7 +30,7 @@ Route::get('/debug-auth', function (Request $request) {
             'Authorization' => $request->header('Authorization') ? 'Bearer token present' : 'No bearer token',
         ]
     ]);
-})->middleware('auth:sanctum');
+})->middleware('auth');
 
 // Public test endpoint (no auth required)
 Route::get('/test-public', function (Request $request) {
@@ -42,7 +42,7 @@ Route::get('/test-public', function (Request $request) {
 
 Route::get('/user', function (Request $request) {
     return $request->user();
-})->middleware('auth:sanctum');
+})->middleware('auth');
 
 // Test endpoint to verify authentication
 Route::get('/auth-test', function (Request $request) {
@@ -53,9 +53,9 @@ Route::get('/auth-test', function (Request $request) {
         'user_email' => $user?->email,
         'message' => 'API authentication is working'
     ]);
-})->middleware('auth:sanctum');
+})->middleware('auth');
 
-Route::middleware(['auth:sanctum'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     // Notification endpoints
     Route::get('/notifications/vapid-key', [NotificationController::class, 'getVapidPublicKey']);
     Route::post('/notifications/subscribe', [NotificationController::class, 'subscribe']);

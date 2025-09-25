@@ -162,6 +162,7 @@ const unsubscribe = async () => {
 // Get VAPID public key from server
 const getVapidPublicKey = async (): Promise<string | null> => {
   try {
+    await axios.get('/sanctum/csrf-cookie');
     const response = await axios.get('/api/notifications/vapid-key')
     return response.data.public_key
   } catch (error) {
