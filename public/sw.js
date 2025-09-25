@@ -1,12 +1,12 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACHE_NAME = 'webrtc-webpush-v4';
-const DATA_CACHE_NAME = 'webrtc-webpush-data-v4';
+const CACHE_NAME = 'webrtc-webpush-v1';
+const DATA_CACHE_NAME = 'webrtc-webpush-data-v1';
 
 // Files to cache for offline functionality
 const FILES_TO_CACHE = [
-    '/manifest.json',
+    //'/manifest.json',
     '/favicon.ico',
     '/favicon.svg'
     // '/icons/icon-192x192.png',
@@ -25,13 +25,13 @@ function sendMessageToClients(message) {
 
 // URLs that should be cached with network-first strategy
 const DATA_URLS = [
-     '/api/user',
-     '/api/notifications',
-     //'/notifications/subscribe',
-     //'/notifications/unsubscribe',
-     '/notifications/test',
-     '/login',
-     '/logout'
+    //  '/api/user',
+    //  '/api/notifications',
+    //  //'/notifications/subscribe',
+    //  //'/notifications/unsubscribe',
+    //  '/notifications/test',
+    //  '/login',
+    //  '/logout'
 ];
 
 // Install event - cache app shell
@@ -71,67 +71,6 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// Fetch event - implement caching strategies
-self.addEventListener('fetch', (event) => {
-    // Skip non-http requests
-    if (!event.request.url.startsWith('http')) {
-        return;
-    }
-
-    // Handle API requests with network-first strategy
-    if (DATA_URLS.some(url => event.request.url.includes(url))) {
-        event.respondWith(
-            caches.open(DATA_CACHE_NAME).then((cache) => {
-                return fetch(event.request)
-                    .then((response) => {
-                        // Cache successful responses
-                        if (response.status === 200) {
-                            cache.put(event.request.url, response.clone());
-                        }
-                        return response;
-                    })
-                    .catch(() => {
-                        // Fallback to cache if network fails
-                        return cache.match(event.request);
-                    });
-            })
-        );
-        return;
-    }
-
-    // Handle app shell with cache-first strategy
-    event.respondWith(
-        caches.match(event.request).then((response) => {
-            if (response) {
-                return response;
-            }
-
-            // Clone the request for fetch
-            const fetchRequest = event.request.clone();
-
-            return fetch(fetchRequest).then((response) => {
-                // Check if valid response
-                if (!response || response.status !== 200 || response.type !== 'basic') {
-                    return response;
-                }
-
-                // Clone the response for caching
-                const responseToCache = response.clone();
-
-                caches.open(CACHE_NAME).then((cache) => {
-                    cache.put(event.request, responseToCache);
-                });
-
-                return response;
-            }).catch(() => {
-                // Return offline page for navigation requests
-                if (event.request.mode === 'navigate') {
-                    return caches.match('/offline.html');
-                }
-            });
-        })
-    );
-});
 
 // Push event handler - enhanced for iOS with badge support
 self.addEventListener('push', (event) => {
