@@ -8,7 +8,7 @@ const DATA_CACHE_NAME = 'webrtc-webpush-data-v5';
 const FILES_TO_CACHE = [
     '/manifest.json',
     '/favicon.ico',
-    '/favicon.svg'
+    '/favicon.svg',
      '/icons/icon-192x192.png',
      '/icons/icon-512x512.png',
      '/apple-touch-icon.png'
