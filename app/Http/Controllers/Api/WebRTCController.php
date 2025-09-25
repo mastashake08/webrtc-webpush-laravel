@@ -62,7 +62,7 @@ class WebRTCController extends Controller
                 'caller_name' => $caller->name
             ]);
 
-            $targetUser->notify(new WebRTCSendSDPNotification($sdpData, $targetUserId, $callType));
+            $targetUser->notify(new WebRTCSendSDPNotification($sdpData, $caller->id, $caller->name, $callType));
             Log::info("WebRTC notification queued successfully");
 
             Log::info("WebRTC call offer sent", [

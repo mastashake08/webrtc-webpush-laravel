@@ -124,6 +124,12 @@ const startCall = async () => {
     isOutgoingCall.value = true
     connectionStatus.value = 'connecting'
     
+    // Generate a unique call ID for outgoing calls
+    if (!callId.value) {
+      callId.value = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      console.log('📞 WebRTCCall: Generated call ID:', callId.value)
+    }
+    
     // Get user media
     await getUserMedia()
     
@@ -274,12 +280,23 @@ const endCall = async (reason: string = 'ended') => {
 
 // Send ICE candidate
 const sendIceCandidate = async (candidate: RTCIceCandidate) => {
+  console.log('🧊 WebRTCCall: sendIceCandidate called')
+  console.log('🧊 WebRTCCall: targetUserId:', props.targetUserId)
+  console.log('🧊 WebRTCCall: callId:', callId.value)
+  console.log('🧊 WebRTCCall: candidate:', candidate)
+  
   if (!props.targetUserId) {
+    console.error('❌ WebRTCCall: No target user for ICE candidate')
+    return
+  }
+  
+  if (!callId.value) {
+    console.error('❌ WebRTCCall: No call ID for ICE candidate')
     return
   }
   
   try {
-    await axios.post('/api/webrtc/send-ice-candidate', {
+    const payload = {
       target_user_id: props.targetUserId,
       call_id: callId.value,
       ice_candidate: {
@@ -287,10 +304,16 @@ const sendIceCandidate = async (candidate: RTCIceCandidate) => {
         sdpMid: candidate.sdpMid,
         sdpMLineIndex: candidate.sdpMLineIndex
       }
-    })
+    }
+    
+    console.log('📡 WebRTCCall: Sending ICE candidate with payload:', payload)
+    
+    await axios.post('/api/webrtc/send-ice-candidate', payload)
+    
+    console.log('✅ WebRTCCall: ICE candidate sent successfully')
     
   } catch (error) {
-    console.error('Error sending ICE candidate:', error)
+    console.error('❌ WebRTCCall: Error sending ICE candidate:', error)
   }
 }
 

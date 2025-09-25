@@ -14,20 +14,23 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
     use Queueable;
 
     private array $sdpData;
-    private int $targetUserId;
+    private int $callerId;
+    private string $callerName;
     private string $callType;
 
     /**
      * Create a new notification instance.
      *
      * @param array $sdpData The SDP offer/answer data
-     * @param int $targetUserId The user receiving the SDP
+     * @param int $callerId The user making the call
+     * @param string $callerName The name of the caller
      * @param string $callType Type of call (video, audio, data)
      */
-    public function __construct(array $sdpData, int $targetUserId, string $callType = 'video')
+    public function __construct(array $sdpData, int $callerId, string $callerName, string $callType = 'video')
     {
         $this->sdpData = $sdpData;
-        $this->targetUserId = $targetUserId;
+        $this->callerId = $callerId;
+        $this->callerName = $callerName;
         $this->callType = $callType;
     }
 
@@ -48,15 +51,14 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
      */
     public function toWebPush(object $notifiable): array
     {
-        $callerName = $notifiable->name ?? 'Someone';
         $callTypeDisplay = ucfirst($this->callType);
         
         return [
             'title' => "Incoming {$callTypeDisplay} Call 📹",
-            'body' => "{$callerName} is calling you via WebRTC",
+            'body' => "{$this->callerName} is calling you via WebRTC",
             'icon' => '/favicon.ico',
             'badge' => '/favicon.ico',
-            'tag' => 'webrtc-call-' . $this->targetUserId,
+            'tag' => 'webrtc-call-' . $this->callerId,
             'requireInteraction' => true, // Keep notification visible until user interacts
             'actions' => [
                 [
@@ -73,13 +75,13 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
             'data' => [
                 'type' => 'webrtc_send_sdp',
                 'call_type' => $this->callType,
-                'caller_id' => $notifiable->id,
-                'caller_name' => $callerName,
-                'target_user_id' => $this->targetUserId,
+                'caller_id' => $this->callerId,
+                'caller_name' => $this->callerName,
+                'target_user_id' => $notifiable->id,
                 'sdp' => $this->sdpData,
                 'timestamp' => now()->timestamp,
                 'call_id' => uniqid('call_', true),
-                'url' => '/call/incoming/' . $this->targetUserId,
+                'url' => '/call/incoming/' . $notifiable->id,
                 'badge' => $notifiable->getBadgeCount(),
             ]
         ];
@@ -94,12 +96,12 @@ class WebRTCSendSDPNotification extends Notification implements ShouldQueue, Web
     {
         return new DatabaseMessage([
             'title' => 'Incoming WebRTC Call',
-            'message' => "You have an incoming {$this->callType} call from {$notifiable->name}",
+            'message' => "You have an incoming {$this->callType} call from {$this->callerName}",
             'type' => 'webrtc_send_sdp',
             'call_type' => $this->callType,
-            'caller_id' => $notifiable->id,
-            'caller_name' => $notifiable->name,
-            'target_user_id' => $this->targetUserId,
+            'caller_id' => $this->callerId,
+            'caller_name' => $this->callerName,
+            'target_user_id' => $notifiable->id,
             'sdp_data' => $this->sdpData,
             'call_id' => uniqid('call_', true),
             'timestamp' => now()->timestamp,
