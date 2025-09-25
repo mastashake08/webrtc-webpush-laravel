@@ -1,7 +1,7 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACHE_NAME = 'webrtc-webpush-v5.4';
+const CACHE_NAME = 'webrtc-webpush-v5.5';
 const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.4';
 
 // Files to cache for offline functionality
