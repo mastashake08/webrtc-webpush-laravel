@@ -106,9 +106,20 @@ const initializePeerConnection = () => {
   }
   
   peerConnection.ontrack = (event) => {
+    console.log('📹 WebRTCCall: Received remote track:', event)
     remoteStream = event.streams[0]
+    console.log('📹 WebRTCCall: Remote stream:', remoteStream)
+    
     if (remoteVideo.value) {
+      console.log('📹 WebRTCCall: Setting remote video srcObject')
       remoteVideo.value.srcObject = remoteStream
+      
+      // Try to play remote video
+      remoteVideo.value.play().catch(error => {
+        console.warn('📹 WebRTCCall: Remote video play failed:', error)
+      })
+    } else {
+      console.warn('📹 WebRTCCall: remoteVideo ref not available yet')
     }
   }
   
@@ -165,6 +176,8 @@ const getUserMedia = async (): Promise<MediaStream> => {
 // Send call offer
 const startCall = async () => {
   console.log('📞 WebRTCCall: startCall() method called')
+  debugCurrentState()
+  
   console.log('📞 WebRTCCall: targetUserId:', props.targetUserId)
   console.log('📞 WebRTCCall: callType:', props.callType)
   
@@ -185,6 +198,9 @@ const startCall = async () => {
       callId.value = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       console.log('📞 WebRTCCall: Generated call ID:', callId.value)
     }
+    
+    console.log('📞 WebRTCCall: After setting call states...')
+    debugCurrentState()
     
     // Get user media FIRST
     console.log('📹 WebRTCCall: Getting user media...')
@@ -288,10 +304,9 @@ const acceptCall = async () => {
       console.log('📞 WebRTCCall: Setting remote description from props...')
       
       try {
-        const sdpOffer = parseSdpData(props.incomingCall.sdp, 'incoming call offer')
-        const remoteDesc = new RTCSessionDescription(JSON.parse(props.incomingCall.sdp))
-        console.log(remoteDesc)
-        await peerConnection.setRemoteDescription(JSON.parse(props.incomingCall.sdp))
+        const sdpOffer = JSON.parse(props.incomingCall.sdp)
+        console.log('📞 WebRTCCall: Setting remote description with parsed SDP:', sdpOffer)
+        await peerConnection.setRemoteDescription(sdpOffer)
       } catch (error: any) {
         console.error('❌ WebRTCCall: Failed to set remote description from props:', error)
         throw error
@@ -330,6 +345,9 @@ const acceptIncomingCall = async (callData: any) => {
   }
   
   try {
+    console.log('📞 WebRTCCall: Starting acceptIncomingCall process...')
+    debugCurrentState()
+    
     isIncomingCall.value = false
     isCallActive.value = true
     connectionStatus.value = 'connecting'
@@ -339,6 +357,9 @@ const acceptIncomingCall = async (callData: any) => {
     console.log('📞 WebRTCCall: Getting user media for answer...')
     // Get user media
     await getUserMedia()
+    
+    console.log('📞 WebRTCCall: After getUserMedia...')
+    debugCurrentState()
     
     // Initialize peer connection
     initializePeerConnection()
@@ -377,6 +398,14 @@ const acceptIncomingCall = async (callData: any) => {
       })
       
       // Send answer via API
+      console.log('📞 WebRTCCall: Preparing to send answer via API...', {
+        caller_user_id: callData.caller_id,
+        call_id: callData.call_id,
+        session_id: callData.session_id,
+        answer_type: answer.type,
+        answer_sdp_length: answer.sdp?.length || 0
+      })
+      
       const response = await axios.post('/api/webrtc/send-answer', {
         caller_user_id: callData.caller_id,
         call_id: callData.call_id,
@@ -386,6 +415,13 @@ const acceptIncomingCall = async (callData: any) => {
       })
       
       console.log('✅ WebRTCCall: Answer sent successfully:', response.data)
+      
+      if (!response.data.success) {
+        throw new Error(`API response not successful: ${response.data.message || 'Unknown error'}`)
+      }
+      
+      console.log('📞 WebRTCCall: After sending answer...')
+      debugCurrentState()
       
       startCallTimer()
       emit('callAccepted', callData.call_id)
@@ -600,16 +636,74 @@ const cleanup = () => {
 
 // Computed properties
 const showLocalVideo = computed(() => {
-  const shouldShow = props.callType === 'video' && localStream !== null && isCallActive.value
+  const shouldShow = props.callType === 'video' && localStream !== null && (isCallActive.value || isOutgoingCall.value)
   console.log('📹 WebRTCCall: showLocalVideo computed:', {
     callType: props.callType,
     hasLocalStream: localStream !== null,
     isCallActive: isCallActive.value,
+    isOutgoingCall: isOutgoingCall.value,
     shouldShow
   })
   return shouldShow
 })
-const showRemoteVideo = computed(() => props.callType === 'video' && remoteStream)
+
+const showRemoteVideo = computed(() => {
+  const shouldShow = props.callType === 'video' && remoteStream !== null
+  console.log('📹 WebRTCCall: showRemoteVideo computed:', {
+    callType: props.callType,
+    hasRemoteStream: remoteStream !== null,
+    shouldShow
+  })
+  return shouldShow
+})
+
+// Watch for remote stream changes and update video element  
+watch(() => remoteStream, (newStream) => {
+  console.log('📹 WebRTCCall: Remote stream changed:', newStream)
+  if (newStream && remoteVideo.value) {
+    console.log('📹 WebRTCCall: Updating remote video element with new stream')
+    remoteVideo.value.srcObject = newStream
+    remoteVideo.value.play().catch(error => {
+      console.warn('📹 WebRTCCall: Remote video play failed:', error)
+    })
+  }
+})
+
+// Watch for remote video element becoming available
+watch(() => remoteVideo.value, (videoElement) => {
+  console.log('📹 WebRTCCall: Remote video element changed:', videoElement)
+  if (videoElement && remoteStream) {
+    console.log('📹 WebRTCCall: Setting existing remote stream on new video element')
+    videoElement.srcObject = remoteStream
+    videoElement.play().catch(error => {
+      console.warn('📹 WebRTCCall: Remote video play failed:', error)
+    })
+  }
+})
+
+// Helper function to debug current state
+const debugCurrentState = () => {
+  console.log('🔧 WebRTCCall: Current State Debug:', {
+    callId: callId.value,
+    callerName: callerName.value,
+    isCallActive: isCallActive.value,
+    isIncomingCall: isIncomingCall.value,
+    isOutgoingCall: isOutgoingCall.value,
+    isVideoEnabled: isVideoEnabled.value,
+    isAudioEnabled: isAudioEnabled.value,
+    connectionStatus: connectionStatus.value,
+    hasLocalStream: localStream !== null,
+    hasRemoteStream: remoteStream !== null,
+    hasLocalVideo: localVideo.value !== undefined,
+    hasRemoteVideo: remoteVideo.value !== undefined,
+    localVideoSrc: localVideo.value?.srcObject ? 'set' : 'null',
+    remoteVideoSrc: remoteVideo.value?.srcObject ? 'set' : 'null',
+    showLocalVideo: showLocalVideo.value,
+    showRemoteVideo: showRemoteVideo.value,
+    hasPeerConnection: peerConnection !== null,
+    peerConnectionState: peerConnection?.connectionState || 'none'
+  })
+}
 
 // Watch for local stream changes and update video element
 watch(() => localStream, (newStream) => {
