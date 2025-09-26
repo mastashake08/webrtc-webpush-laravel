@@ -161,7 +161,20 @@ self.addEventListener('push', (event) => {
                 break;
                 
             case 'webrtc_receive_sdp':
-                // Call answered - normal notification
+                // Call answered - send answer data to clients and show notification
+                console.log('📞 SW: Processing call answer with SDP data:', notificationData.data);
+                sendMessageToClients({
+                    type: 'WEBRTC_CALL_ANSWER',
+                    data: {
+                        call_id: notificationData.data.call_id,
+                        caller_user_id: notificationData.data.caller_user_id,
+                        responder_id: notificationData.data.responder_id,
+                        responder_name: notificationData.data.responder_name,
+                        call_type: notificationData.data.call_type,
+                        sdp: notificationData.data.sdp,
+                        timestamp: notificationData.data.timestamp
+                    }
+                });
                 notificationData.requireInteraction = false;
                 notificationData.silent = false;
                 break;
@@ -255,6 +268,9 @@ self.addEventListener('notificationclick', (event) => {
                             call_type: notificationData.call_type
                         }
                     });
+                    
+                    // Clear server badge when call is accepted from notification
+                    clearServerBadgeCount();
                     
                     // Open dashboard to show the call interface
                     urlToOpen = '/dashboard';
@@ -365,8 +381,32 @@ self.addEventListener('sync', (event) => {
 self.addEventListener('message', (event) => {
     console.log('Service Worker received message:', event.data);
     
-    if (event.data && event.data.type === 'SKIP_WAITING') {
-        self.skipWaiting();
+    if (event.data && event.data.type) {
+        switch (event.data.type) {
+            case 'SKIP_WAITING':
+                self.skipWaiting();
+                break;
+                
+            case 'CLOSE_NOTIFICATIONS':
+                // Close notifications by tag
+                if (event.data.tags && Array.isArray(event.data.tags)) {
+                    event.data.tags.forEach(tag => {
+                        if (tag) {
+                            console.log('🧹 SW: Closing notification with tag:', tag);
+                            self.registration.getNotifications({ tag: tag }).then(notifications => {
+                                notifications.forEach(notification => {
+                                    console.log('🧹 SW: Closing notification:', notification.tag);
+                                    notification.close();
+                                });
+                            });
+                        }
+                    });
+                }
+                break;
+                
+            default:
+                console.log('🤷 SW: Unknown message type:', event.data.type);
+        }
     }
 });
 

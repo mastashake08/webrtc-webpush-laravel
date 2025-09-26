@@ -36,9 +36,9 @@ const isAudioEnabled = ref(true)
 const callDuration = ref(0)
 const connectionStatus = ref<'connecting' | 'connected' | 'disconnected' | 'failed'>('disconnected')
 
-// WebRTC objects
+// WebRTC objects (reactive streams)
 let localStream: MediaStream | null = null
-let remoteStream: MediaStream | null = null
+const remoteStream = ref<MediaStream | null>(null)
 let peerConnection: RTCPeerConnection | null = null
 let callTimer: number | null = null
 
@@ -107,12 +107,12 @@ const initializePeerConnection = () => {
   
   peerConnection.ontrack = (event) => {
     console.log('📹 WebRTCCall: Received remote track:', event)
-    remoteStream = event.streams[0]
-    console.log('📹 WebRTCCall: Remote stream:', remoteStream)
+    remoteStream.value = event.streams[0]
+    console.log('📹 WebRTCCall: Remote stream:', remoteStream.value)
     
     if (remoteVideo.value) {
       console.log('📹 WebRTCCall: Setting remote video srcObject')
-      remoteVideo.value.srcObject = remoteStream
+      remoteVideo.value.srcObject = remoteStream.value
       
       // Try to play remote video
       remoteVideo.value.play().catch(error => {
@@ -615,9 +615,9 @@ const cleanup = () => {
     localStream = null
   }
   
-  if (remoteStream) {
-    remoteStream.getTracks().forEach(track => track.stop())
-    remoteStream = null
+  if (remoteStream.value) {
+    remoteStream.value.getTracks().forEach((track: MediaStreamTrack) => track.stop())
+    remoteStream.value = null
   }
   
   if (peerConnection) {
@@ -648,33 +648,31 @@ const showLocalVideo = computed(() => {
 })
 
 const showRemoteVideo = computed(() => {
-  const shouldShow = props.callType === 'video' && remoteStream !== null
+  const shouldShow = props.callType === 'video' && remoteStream.value !== null
   console.log('📹 WebRTCCall: showRemoteVideo computed:', {
     callType: props.callType,
-    hasRemoteStream: remoteStream !== null,
+    hasRemoteStream: remoteStream.value !== null,
     shouldShow
   })
   return shouldShow
 })
 
 // Watch for remote stream changes and update video element  
-watch(() => remoteStream, (newStream) => {
+watch(() => remoteStream.value, (newStream) => {
   console.log('📹 WebRTCCall: Remote stream changed:', newStream)
-  if (newStream && remoteVideo.value) {
-    console.log('📹 WebRTCCall: Updating remote video element with new stream')
+  if (remoteVideo.value && newStream) {
+    console.log('📹 WebRTCCall: Updating remote video srcObject')
     remoteVideo.value.srcObject = newStream
     remoteVideo.value.play().catch(error => {
       console.warn('📹 WebRTCCall: Remote video play failed:', error)
     })
   }
-})
-
-// Watch for remote video element becoming available
+})// Watch for remote video element becoming available
 watch(() => remoteVideo.value, (videoElement) => {
   console.log('📹 WebRTCCall: Remote video element changed:', videoElement)
-  if (videoElement && remoteStream) {
+  if (videoElement && remoteStream.value) {
     console.log('📹 WebRTCCall: Setting existing remote stream on new video element')
-    videoElement.srcObject = remoteStream
+    videoElement.srcObject = remoteStream.value
     videoElement.play().catch(error => {
       console.warn('📹 WebRTCCall: Remote video play failed:', error)
     })

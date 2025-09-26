@@ -251,7 +251,8 @@ class WebRTCController extends Controller
         $responder = Auth::user();
         $callerUserId = $request->caller_user_id;
         $callId = $request->call_id;
-        $sdpData = json_encode($request->sdp);
+        $sdpData = $request->sdp; // Keep as array for notification
+        $sdpDataJson = json_encode($request->sdp); // JSON string for database storage
         $callType = $request->call_type ?? 'video';
         $sessionId = $request->session_id;
 
@@ -272,6 +273,11 @@ class WebRTCController extends Controller
             ], 404);
         }
 
+        // Clear badge count for responder since they're answering the call
+        // This clears the incoming call notification badge
+        $responder->clearBadgeCount();
+        Log::info("Badge count cleared for responder {$responder->id} when answering call");
+
         try {
             // If session_id provided, update the database session with the answer
             if ($sessionId) {
@@ -283,7 +289,7 @@ class WebRTCController extends Controller
                         ->first();
                         
                     if ($session) {
-                        $session->setSdpAnswer($sdpData);
+                        $session->setSdpAnswer($sdpDataJson);
                         $session->markAsAccepted();
                         Log::info("🔧 DEBUG: Updated database session with answer", [
                             'session_id' => $session->id,
@@ -295,7 +301,7 @@ class WebRTCController extends Controller
                         $cacheKey = "webrtc_session_{$sessionId}";
                         $cachedSession = Cache::get($cacheKey);
                         if ($cachedSession) {
-                            $cachedSession['sdp_answer'] = $sdpData;
+                            $cachedSession['sdp_answer'] = $sdpDataJson;
                             $cachedSession['status'] = 'accepted';
                             Cache::put($cacheKey, $cachedSession, 300);
                             Log::info("🔧 DEBUG: Updated cache session with answer");
@@ -468,6 +474,13 @@ class WebRTCController extends Controller
         }
 
         try {
+            // Clear badge count for call-related notifications when call ends
+            if (in_array($reason, ['accepted', 'declined', 'ended'])) {
+                // Reset badge count for the target user since the call is resolved
+                $targetUser->clearBadgeCount();
+                Log::info("Badge count cleared for user {$targetUserId} due to call {$reason}");
+            }
+            
             // Send call end notification
             $payload = [
                 'title' => 'Call Ended',

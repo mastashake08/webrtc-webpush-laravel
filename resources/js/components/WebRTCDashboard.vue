@@ -62,6 +62,11 @@ const handleServiceWorkerMessage = async (event: MessageEvent) => {
         handleIncomingCall(event.data.data)
         break
         
+      case 'WEBRTC_CALL_ANSWER':
+        console.log('📞 Dashboard: Handling WebRTC call answer directly')
+        handleCallAnswer(event.data.data)
+        break
+        
       case 'WEBRTC_ICE_CANDIDATE':
         console.log('🧊 Dashboard: Handling ICE candidate directly')
         handleIceCandidate(event.data.data)
@@ -317,7 +322,7 @@ const startCall = (userId: number, callType: string) => {
 }
 
 // Accept incoming call
-const acceptCall = () => {
+const acceptCall = async () => {
   if (!incomingCall.value) return
   
   console.log('📞 Dashboard: Accepting call:', incomingCall.value.call_id)
@@ -325,6 +330,9 @@ const acceptCall = () => {
   
   // Store the call data before clearing it
   const callData = { ...incomingCall.value }
+  
+  // Clear notification for this call when accepted
+  await clearCallNotification(callData.call_id, callData.session_id)
   
   // Set the active call state for the WebRTCCall component
   activeCall.value = {
@@ -376,6 +384,9 @@ const handleNotificationAcceptCall = async (data: any) => {
     console.error('❌ Dashboard: Missing session_id or call_id in notification accept data')
     return
   }
+  
+  // Clear notification immediately when accepting from notification
+  await clearCallNotification(data.call_id, data.session_id)
   
   try {
     // Fetch the actual session data from the server
@@ -596,6 +607,57 @@ const clearNotification = (notificationId: number) => {
 // Clear all notifications
 const clearAllNotifications = () => {
   notifications.value = []
+}
+
+// Clear specific call notification and badge
+const clearCallNotification = async (callId: string, sessionId?: string) => {
+  try {
+    console.log('🧹 Dashboard: Clearing call notification for call:', callId, 'session:', sessionId)
+    
+    // Clear from local notifications array
+    const beforeCount = notifications.value.length
+    notifications.value = notifications.value.filter((notification: any) => {
+      const notificationCallId = notification.data?.call_id || notification.call_id
+      const notificationSessionId = notification.data?.session_id || notification.session_id
+      
+      // Remove notifications that match either call_id or session_id
+      const shouldRemove = notificationCallId === callId || 
+                          notificationSessionId === sessionId ||
+                          notificationCallId === sessionId ||
+                          notificationSessionId === callId
+      
+      return !shouldRemove
+    })
+    
+    const afterCount = notifications.value.length
+    console.log(`🧹 Dashboard: Removed ${beforeCount - afterCount} notifications from local array`)
+    
+    // Clear browser notification if it exists (using tag matching)
+    if ('Notification' in window && Notification.permission === 'granted') {
+      // Close any existing notifications with matching tags
+      const possibleTags = [
+        `webrtc-call-${callId}`,
+        `webrtc-call-${sessionId}`,
+        `webrtc-response-${callId}`,
+        `webrtc-response-${sessionId}`
+      ].filter(Boolean)
+      
+      // Send message to service worker to close matching notifications
+      if ('serviceWorker' in navigator && serviceWorker) {
+        serviceWorker.postMessage({
+          type: 'CLOSE_NOTIFICATIONS',
+          tags: possibleTags
+        })
+      }
+    }
+    
+    // Clear server-side badge count
+    await axios.post('/api/notifications/clear-badge')
+    console.log('🧹 Dashboard: Server badge cleared')
+    
+  } catch (error: any) {
+    console.error('❌ Dashboard: Error clearing call notification:', error)
+  }
 }
 
 // SDP Debug Functions
