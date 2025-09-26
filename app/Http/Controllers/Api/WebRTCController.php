@@ -163,14 +163,13 @@ class WebRTCController extends Controller
     /**
      * Get SDP data by session ID
      */
-    public function getSdpData(Request $request): JsonResponse
+    public function getSdpData(Request $request, $sessionId): JsonResponse
     {
-        $request->validate([
-            'session_id' => 'required|integer|exists:webrtc_sessions,id'
-        ]);
+        // $request->validate([
+        //     'session_id' => 'required|integer|exists:webrtc_sessions,id'
+        // ]);
 
         $user = Auth::user();
-        $sessionId = $request->session_id;
 
         try {
             // Find the session and verify user is involved

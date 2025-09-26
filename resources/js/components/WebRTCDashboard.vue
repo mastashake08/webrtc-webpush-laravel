@@ -16,6 +16,13 @@ const showCallInterface = ref(false)
 const showUserSelector = ref(false)
 const showIncomingCallModal = ref(false)
 
+// SDP Debug State
+const showSdpDebugger = ref(false)
+const offerSdp = ref('')
+const answerSdp = ref('')
+const sdpParseResult = ref<any>(null)
+const sdpError = ref('')
+
 // Service worker for handling push notifications
 let serviceWorker: ServiceWorker | null = null
 
@@ -187,11 +194,9 @@ const handleIncomingCall = async (data: any) => {
   try {
     // Fetch SDP data from database using session ID
     console.log('📞 Dashboard: Fetching SDP data for session:', data.session_id)
-    
-    const response = await axios.get('/api/webrtc/get-sdp-data', {
-      params: { session_id: data.session_id }
-    })
-    
+
+    const response = await axios.get(`/api/webrtc/session/${data.session_id}`)
+
     if (!response.data.success) {
       console.error('❌ Dashboard: Failed to fetch SDP data:', response.data.message)
       return
@@ -593,6 +598,138 @@ const clearAllNotifications = () => {
   notifications.value = []
 }
 
+// SDP Debug Functions
+const validateAndParseSdp = (sdpString: string, type: 'offer' | 'answer') => {
+  try {
+    sdpError.value = ''
+    
+    if (!sdpString.trim()) {
+      throw new Error(`${type} SDP cannot be empty`)
+    }
+
+    // Try to parse as JSON first (database format)
+    let sdpData
+    try {
+      sdpData = JSON.parse(sdpString)
+    } catch {
+      // If not JSON, assume it's raw SDP string
+      sdpData = {
+        type: type,
+        sdp: sdpString
+      }
+    }
+
+    // Validate structure
+    if (!sdpData.type || !sdpData.sdp) {
+      throw new Error(`Invalid SDP structure: missing 'type' or 'sdp' properties`)
+    }
+
+    if (!['offer', 'answer'].includes(sdpData.type)) {
+      throw new Error(`Invalid SDP type: ${sdpData.type}. Expected 'offer' or 'answer'`)
+    }
+
+    // Basic SDP content validation
+    if (!sdpData.sdp.includes('v=0') || !sdpData.sdp.includes('o=')) {
+      throw new Error('Invalid SDP content: missing required session description fields')
+    }
+
+    return {
+      valid: true,
+      parsed: sdpData,
+      analysis: {
+        type: sdpData.type,
+        hasAudio: sdpData.sdp.includes('m=audio'),
+        hasVideo: sdpData.sdp.includes('m=video'),
+        hasDataChannel: sdpData.sdp.includes('m=application'),
+        iceUfrag: sdpData.sdp.match(/a=ice-ufrag:([^\r\n]+)/)?.[1] || 'N/A',
+        icePwd: sdpData.sdp.match(/a=ice-pwd:([^\r\n]+)/)?.[1] || 'N/A',
+        fingerprint: sdpData.sdp.match(/a=fingerprint:([^\r\n]+)/)?.[1] || 'N/A',
+        sdpSize: sdpData.sdp.length
+      }
+    }
+  } catch (error: any) {
+    sdpError.value = error.message
+    return {
+      valid: false,
+      error: error.message
+    }
+  }
+}
+
+const analyzeSdpPair = () => {
+  sdpParseResult.value = null
+  sdpError.value = ''
+
+  if (!offerSdp.value.trim() && !answerSdp.value.trim()) {
+    sdpError.value = 'Please provide at least one SDP (offer or answer)'
+    return
+  }
+
+  const results: any = {
+    timestamp: new Date().toISOString(),
+    analysis: {}
+  }
+
+  if (offerSdp.value.trim()) {
+    results.offer = validateAndParseSdp(offerSdp.value, 'offer')
+  }
+
+  if (answerSdp.value.trim()) {
+    results.answer = validateAndParseSdp(answerSdp.value, 'answer')
+  }
+
+  // Cross-validation if both are provided
+  if (results.offer?.valid && results.answer?.valid) {
+    results.compatibility = {
+      iceCredentialsMatch: results.offer.analysis.iceUfrag === results.answer.analysis.iceUfrag,
+      mediaTypesMatch: {
+        audio: results.offer.analysis.hasAudio === results.answer.analysis.hasAudio,
+        video: results.offer.analysis.hasVideo === results.answer.analysis.hasVideo
+      }
+    }
+  }
+
+  sdpParseResult.value = results
+}
+
+const copyToClipboard = async (text: string, type: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    console.log(`📋 ${type} copied to clipboard`)
+    // You could add a toast notification here
+  } catch (error) {
+    console.error(`Failed to copy ${type}:`, error)
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    document.body.appendChild(textArea)
+    textArea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textArea)
+  }
+}
+
+const pasteFromClipboard = async (target: 'offer' | 'answer') => {
+  try {
+    const text = await navigator.clipboard.readText()
+    if (target === 'offer') {
+      offerSdp.value = text
+    } else {
+      answerSdp.value = text
+    }
+    console.log(`📋 Pasted content to ${target} SDP`)
+  } catch (error) {
+    console.error('Failed to paste from clipboard:', error)
+  }
+}
+
+const clearSdpDebugger = () => {
+  offerSdp.value = ''
+  answerSdp.value = ''
+  sdpParseResult.value = null
+  sdpError.value = ''
+}
+
 // Lifecycle
 onMounted(() => {
   initializeWebRTCDashboard()
@@ -665,6 +802,233 @@ onUnmounted(() => {
           @subscription-changed="(isSubscribed: boolean) => console.log('Subscription changed:', isSubscribed)"
           @error="(error: any) => console.error('Push notification error:', error)"
         />
+
+        <!-- SDP Debugger -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+              SDP Debugger
+            </h2>
+            <button
+              @click="showSdpDebugger = !showSdpDebugger"
+              class="flex items-center px-3 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-md text-sm transition-colors"
+            >
+              <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="showSdpDebugger ? 'M9 5l7 7-7 7' : 'M19 9l-7 7-7-7'"></path>
+              </svg>
+              {{ showSdpDebugger ? 'Hide' : 'Show' }}
+            </button>
+          </div>
+
+          <div v-if="showSdpDebugger" class="space-y-6">
+            <!-- SDP Input Section -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Offer SDP -->
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Offer SDP
+                  </label>
+                  <div class="flex gap-1">
+                    <button
+                      @click="pasteFromClipboard('offer')"
+                      class="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded"
+                      title="Paste from clipboard"
+                    >
+                      Paste
+                    </button>
+                    <button
+                      @click="copyToClipboard(offerSdp, 'Offer SDP')"
+                      :disabled="!offerSdp"
+                      class="text-xs px-2 py-1 bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Copy to clipboard"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  v-model="offerSdp"
+                  placeholder="Paste offer SDP here (JSON format or raw SDP)..."
+                  class="w-full h-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                ></textarea>
+              </div>
+
+              <!-- Answer SDP -->
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Answer SDP
+                  </label>
+                  <div class="flex gap-1">
+                    <button
+                      @click="pasteFromClipboard('answer')"
+                      class="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 dark:bg-blue-900 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 rounded"
+                      title="Paste from clipboard"
+                    >
+                      Paste
+                    </button>
+                    <button
+                      @click="copyToClipboard(answerSdp, 'Answer SDP')"
+                      :disabled="!answerSdp"
+                      class="text-xs px-2 py-1 bg-green-100 hover:bg-green-200 dark:bg-green-900 dark:hover:bg-green-800 text-green-800 dark:text-green-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Copy to clipboard"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  v-model="answerSdp"
+                  placeholder="Paste answer SDP here (JSON format or raw SDP)..."
+                  class="w-full h-32 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 font-mono resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-3">
+              <button
+                @click="analyzeSdpPair"
+                :disabled="!offerSdp.trim() && !answerSdp.trim()"
+                class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-md transition-colors disabled:cursor-not-allowed"
+              >
+                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Analyze SDPs
+              </button>
+              <button
+                @click="clearSdpDebugger"
+                class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition-colors"
+              >
+                <svg class="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Clear All
+              </button>
+            </div>
+
+            <!-- Error Display -->
+            <div v-if="sdpError" class="p-3 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-md">
+              <div class="flex items-start">
+                <svg class="w-5 h-5 text-red-500 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div>
+                  <h4 class="text-sm font-medium text-red-800 dark:text-red-200">Error</h4>
+                  <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ sdpError }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Results Display -->
+            <div v-if="sdpParseResult" class="space-y-4">
+              <div class="border-t pt-4">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Analysis Results</h3>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <!-- Offer Analysis -->
+                  <div v-if="sdpParseResult.offer" class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 dark:text-white mb-2 flex items-center">
+                      <div :class="sdpParseResult.offer.valid ? 'w-2 h-2 bg-green-400 rounded-full mr-2' : 'w-2 h-2 bg-red-400 rounded-full mr-2'"></div>
+                      Offer SDP
+                    </h4>
+                    <div v-if="sdpParseResult.offer.valid" class="space-y-2 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Type:</span>
+                        <span class="text-gray-900 dark:text-white">{{ sdpParseResult.offer.analysis.type }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Audio:</span>
+                        <span :class="sdpParseResult.offer.analysis.hasAudio ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                          {{ sdpParseResult.offer.analysis.hasAudio ? 'Yes' : 'No' }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Video:</span>
+                        <span :class="sdpParseResult.offer.analysis.hasVideo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                          {{ sdpParseResult.offer.analysis.hasVideo ? 'Yes' : 'No' }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Size:</span>
+                        <span class="text-gray-900 dark:text-white">{{ sdpParseResult.offer.analysis.sdpSize }} bytes</span>
+                      </div>
+                      <div class="mt-3 pt-2 border-t">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 break-all">
+                          <div><strong>ICE ufrag:</strong> {{ sdpParseResult.offer.analysis.iceUfrag }}</div>
+                          <div class="mt-1"><strong>Fingerprint:</strong> {{ sdpParseResult.offer.analysis.fingerprint }}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="text-sm text-red-600 dark:text-red-400">
+                      {{ sdpParseResult.offer.error }}
+                    </div>
+                  </div>
+
+                  <!-- Answer Analysis -->
+                  <div v-if="sdpParseResult.answer" class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                    <h4 class="font-medium text-gray-900 dark:text-white mb-2 flex items-center">
+                      <div :class="sdpParseResult.answer.valid ? 'w-2 h-2 bg-green-400 rounded-full mr-2' : 'w-2 h-2 bg-red-400 rounded-full mr-2'"></div>
+                      Answer SDP
+                    </h4>
+                    <div v-if="sdpParseResult.answer.valid" class="space-y-2 text-sm">
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Type:</span>
+                        <span class="text-gray-900 dark:text-white">{{ sdpParseResult.answer.analysis.type }}</span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Audio:</span>
+                        <span :class="sdpParseResult.answer.analysis.hasAudio ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                          {{ sdpParseResult.answer.analysis.hasAudio ? 'Yes' : 'No' }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Video:</span>
+                        <span :class="sdpParseResult.answer.analysis.hasVideo ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                          {{ sdpParseResult.answer.analysis.hasVideo ? 'Yes' : 'No' }}
+                        </span>
+                      </div>
+                      <div class="flex justify-between">
+                        <span class="text-gray-600 dark:text-gray-400">Size:</span>
+                        <span class="text-gray-900 dark:text-white">{{ sdpParseResult.answer.analysis.sdpSize }} bytes</span>
+                      </div>
+                      <div class="mt-3 pt-2 border-t">
+                        <div class="text-xs text-gray-500 dark:text-gray-400 break-all">
+                          <div><strong>ICE ufrag:</strong> {{ sdpParseResult.answer.analysis.iceUfrag }}</div>
+                          <div class="mt-1"><strong>Fingerprint:</strong> {{ sdpParseResult.answer.analysis.fingerprint }}</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="text-sm text-red-600 dark:text-red-400">
+                      {{ sdpParseResult.answer.error }}
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Compatibility Check -->
+                <div v-if="sdpParseResult.compatibility" class="mt-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                  <h4 class="font-medium text-blue-900 dark:text-blue-200 mb-2">Compatibility Analysis</h4>
+                  <div class="space-y-2 text-sm">
+                    <div class="flex justify-between">
+                      <span class="text-blue-700 dark:text-blue-300">Audio Support:</span>
+                      <span :class="sdpParseResult.compatibility.mediaTypesMatch.audio ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                        {{ sdpParseResult.compatibility.mediaTypesMatch.audio ? 'Compatible' : 'Mismatch' }}
+                      </span>
+                    </div>
+                    <div class="flex justify-between">
+                      <span class="text-blue-700 dark:text-blue-300">Video Support:</span>
+                      <span :class="sdpParseResult.compatibility.mediaTypesMatch.video ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                        {{ sdpParseResult.compatibility.mediaTypesMatch.video ? 'Compatible' : 'Mismatch' }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Right Column: Notifications & Activity -->

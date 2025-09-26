@@ -70,7 +70,7 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/send-answer', [WebRTCController::class, 'sendAnswer']);
         Route::post('/send-ice-candidate', [WebRTCController::class, 'sendIceCandidate']);
         Route::post('/end-call', [WebRTCController::class, 'endCall']);
-        Route::get('/get-sdp-data', [WebRTCController::class, 'getSdpData']); // New endpoint to retrieve SDP data
+        Route::get('/session/{session_id}', [WebRTCController::class, 'getSdpData']); // New endpoint to retrieve SDP data
     });
     
     // User badge count
