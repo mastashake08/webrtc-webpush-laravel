@@ -1,8 +1,8 @@
 // Service Worker for PWA and Push Notifications
 // Enhanced with caching strategies and offline support
 
-const CACHE_NAME = 'webrtc-webpush-v5.6';
-const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.6';
+const CACHE_NAME = 'webrtc-webpush-v5.7';
+const DATA_CACHE_NAME = 'webrtc-webpush-data-v5.7';
 
 // Files to cache for offline functionality
 const FILES_TO_CACHE = [
@@ -17,11 +17,16 @@ const FILES_TO_CACHE = [
 ];
 
 // Send message to all active clients
-function sendMessageToClients(message) {
-    return clients.matchAll({ includeUncontrolled: true }).then(clientList => {
-        clientList.forEach(client => {
-            client.postMessage(message);
-        });
+async function sendMessageToClients(message) {
+    const clientList = await clients.matchAll({ 
+        includeUncontrolled: true,
+        type: 'window'
+    });
+    
+    console.log('📞 SW: Sending message to', clientList.length, 'clients:', message);
+    
+    clientList.forEach(client => {
+        client.postMessage(message);
     });
 }
 
@@ -117,18 +122,42 @@ self.addEventListener('push', (event) => {
             case 'webrtc_send_sdp':
                 console.log('📞 SW: Processing incoming call with session ID:', notificationData.data.session_id);
                 
-                // Send normal incoming call message to clients
+                // Validate required data for incoming calls
+                if (!notificationData.data.session_id) {
+                    console.error('❌ SW: Missing session_id for incoming call!');
+                    return;
+                }
+                
+                // Send normal incoming call message to clients with validated data
                 console.log('📞 SW: Sending incoming call data to clients:', notificationData.data);
                 sendMessageToClients({
                     type: 'WEBRTC_INCOMING_CALL',
-                    data: notificationData.data
+                    data: {
+                        session_id: notificationData.data.session_id,
+                        caller_id: notificationData.data.caller_id,
+                        caller_name: notificationData.data.caller_name || 'Unknown Caller',
+                        call_type: notificationData.data.call_type || 'video',
+                        call_id: notificationData.data.call_id
+                    }
                 });
                 
-                // Show incoming call notification
-                notificationData.title = 'Incoming Call';
+                // Show incoming call notification with action buttons
+                notificationData.title = '📞 Incoming Call';
                 notificationData.body = `${notificationData.data.caller_name || 'Unknown'} is calling you`;
                 notificationData.requireInteraction = true;
                 notificationData.silent = false;
+                notificationData.actions = [
+                    {
+                        action: 'accept_call',
+                        title: '✅ Accept',
+                        icon: '/icons/accept-call.png'
+                    },
+                    {
+                        action: 'reject_call',
+                        title: '❌ Decline',
+                        icon: '/icons/reject-call.png'
+                    }
+                ];
                 break;
                 
             case 'webrtc_receive_sdp':
@@ -208,10 +237,31 @@ self.addEventListener('notificationclick', (event) => {
     if (notificationData.type && notificationData.type.startsWith('webrtc_')) {
         switch (notificationData.type) {
             case 'webrtc_send_sdp':
-                // Incoming call
+                // Incoming call notification clicked
+                console.log('📞 SW: Incoming call notification clicked, action:', event.action);
+                console.log('📞 SW: Notification data:', notificationData);
+                
                 if (event.action === 'accept_call') {
-                    urlToOpen = `/call/accept/${notificationData.session_id}`;
+                    console.log('📞 SW: User clicked ACCEPT on notification');
+                    
+                    // Send message to dashboard to accept the call
+                    sendMessageToClients({
+                        type: 'NOTIFICATION_ACCEPT_CALL',
+                        data: {
+                            session_id: notificationData.session_id,
+                            caller_id: notificationData.caller_id,
+                            caller_name: notificationData.caller_name,
+                            call_id: notificationData.call_id,
+                            call_type: notificationData.call_type
+                        }
+                    });
+                    
+                    // Open dashboard to show the call interface
+                    urlToOpen = '/dashboard';
+                    
                 } else if (event.action === 'reject_call') {
+                    console.log('📞 SW: User clicked DECLINE on notification');
+                    
                     // Send API request to decline call
                     fetch('/api/webrtc/end-call', {
                         method: 'POST',
@@ -220,15 +270,26 @@ self.addEventListener('notificationclick', (event) => {
                         },
                         body: JSON.stringify({
                             target_user_id: notificationData.caller_id,
-                            call_id: notificationData.session_id,
+                            call_id: notificationData.call_id || notificationData.session_id,
                             reason: 'declined'
                         })
                     }).catch(err => console.error('Failed to decline call:', err));
                     
+                    // Send message to clients to clear call UI
+                    sendMessageToClients({
+                        type: 'NOTIFICATION_DECLINE_CALL',
+                        data: {
+                            session_id: notificationData.session_id,
+                            call_id: notificationData.call_id
+                        }
+                    });
+                    
                     clearServerBadgeCount();
                     return; // Don't open any window
                 } else {
-                    urlToOpen = `/call/incoming/${notificationData.session_id}`;
+                    // Default click (not on action buttons) - open dashboard
+                    console.log('📞 SW: Notification clicked without specific action, opening dashboard');
+                    urlToOpen = '/dashboard';
                 }
                 break;
                 

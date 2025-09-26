@@ -78,7 +78,7 @@ class WebRTCController extends Controller
                     'caller_id' => $caller->id,
                     'target_user_id' => $targetUserId,
                     'call_type' => $callType,
-                    'sdp_offer' => $sdpData,
+                    'sdp_offer' => json_encode($sdpData),
                     'status' => 'pending',
                     'expires_at' => Carbon::now()->addMinutes(5), // 5 minute timeout
                 ]);
@@ -103,7 +103,7 @@ class WebRTCController extends Controller
                     'caller_name' => $caller->name,
                     'target_user_id' => $targetUserId,
                     'call_type' => $callType,
-                    'sdp_offer' => $sdpData,
+                    'sdp_offer' => json_encode($sdpData),
                     'status' => 'pending',
                     'created_at' => Carbon::now()->toISOString(),
                     'expires_at' => Carbon::now()->addMinutes(5)->toISOString(),
@@ -252,7 +252,7 @@ class WebRTCController extends Controller
         $responder = Auth::user();
         $callerUserId = $request->caller_user_id;
         $callId = $request->call_id;
-        $sdpData = $request->sdp;
+        $sdpData = json_encode($request->sdp);
         $callType = $request->call_type ?? 'video';
         $sessionId = $request->session_id;
 

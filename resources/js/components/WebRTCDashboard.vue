@@ -40,7 +40,7 @@ const initializeWebRTCDashboard = async () => {
 }
 
 // Handle messages from service worker
-const handleServiceWorkerMessage = (event: MessageEvent) => {
+const handleServiceWorkerMessage = async (event: MessageEvent) => {
   console.log('🎯 Dashboard received SW message:', event.data)
   
   if (event.data) {
@@ -58,6 +58,16 @@ const handleServiceWorkerMessage = (event: MessageEvent) => {
       case 'WEBRTC_ICE_CANDIDATE':
         console.log('🧊 Dashboard: Handling ICE candidate directly')
         handleIceCandidate(event.data.data)
+        break
+        
+      case 'NOTIFICATION_ACCEPT_CALL':
+        console.log('📞 Dashboard: Handling notification call acceptance')
+        await handleNotificationAcceptCall(event.data.data)
+        break
+        
+      case 'NOTIFICATION_DECLINE_CALL':
+        console.log('📞 Dashboard: Handling notification call decline')
+        handleNotificationDeclineCall(event.data.data)
         break
         
       default:
@@ -350,6 +360,98 @@ const declineCall = () => {
   
   showIncomingCallModal.value = false
   incomingCall.value = null
+  showCallInterface.value = false
+}
+
+// Handle notification accept call from service worker
+const handleNotificationAcceptCall = async (data: any) => {
+  console.log('📞 Dashboard: Handling notification accept call:', data)
+  
+  if (!data.session_id && !data.call_id) {
+    console.error('❌ Dashboard: Missing session_id or call_id in notification accept data')
+    return
+  }
+  
+  try {
+    // Fetch the actual session data from the server
+    const sessionId = data.session_id || data.call_id
+    const response = await axios.get(`/api/webrtc/session/${sessionId}`)
+    
+    if (response.data.success && response.data.session) {
+      const sessionData = response.data.session
+      console.log('📞 Dashboard: Retrieved session data:', sessionData)
+      
+      // Set up the call with complete data from server
+      incomingCall.value = {
+        call_id: sessionData.id,
+        session_id: sessionData.id,
+        caller_id: sessionData.caller_user_id,
+        caller_name: data.caller_name || sessionData.caller_name || 'Unknown Caller',
+        call_type: sessionData.call_type || 'audio_video',
+        status: 'incoming',
+        sdp: sessionData.offer_sdp, // Include the actual SDP data
+        created_at: sessionData.created_at
+      }
+      
+      console.log('📞 Dashboard: Set up incoming call with session data:', incomingCall.value)
+      
+      // Show the call interface
+      showCallInterface.value = true
+      
+      // Accept the call immediately
+      await nextTick()
+      acceptCall()
+      
+    } else {
+      console.error('❌ Dashboard: Failed to retrieve session data:', response.data)
+      
+      // Fallback: create basic call structure
+      incomingCall.value = {
+        call_id: data.call_id || data.session_id,
+        session_id: data.session_id,
+        caller_id: data.caller_id,
+        caller_name: data.caller_name || 'Unknown Caller',
+        call_type: data.call_type || 'audio_video',
+        status: 'incoming'
+      }
+      
+      console.log('📞 Dashboard: Using fallback call data:', incomingCall.value)
+      showCallInterface.value = true
+      await nextTick()
+      acceptCall()
+    }
+    
+  } catch (error) {
+    console.error('❌ Dashboard: Error fetching session data:', error)
+    
+    // Fallback: create basic call structure
+    incomingCall.value = {
+      call_id: data.call_id || data.session_id,
+      session_id: data.session_id,
+      caller_id: data.caller_id,
+      caller_name: data.caller_name || 'Unknown Caller',
+      call_type: data.call_type || 'audio_video',
+      status: 'incoming'
+    }
+    
+    console.log('📞 Dashboard: Using fallback call data after error:', incomingCall.value)
+    showCallInterface.value = true
+    await nextTick()
+    acceptCall()
+  }
+}
+
+// Handle notification decline call from service worker
+const handleNotificationDeclineCall = (data: any) => {
+  console.log('📞 Dashboard: Handling notification decline call:', data)
+  
+  // Clear any existing call states
+  if (incomingCall.value?.session_id === data.session_id || 
+      incomingCall.value?.call_id === data.call_id) {
+    incomingCall.value = null
+  }
+  
+  showIncomingCallModal.value = false
   showCallInterface.value = false
 }
 
