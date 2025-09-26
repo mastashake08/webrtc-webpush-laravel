@@ -633,9 +633,67 @@ const validateAndParseSdp = (sdpString: string, type: 'offer' | 'answer') => {
       throw new Error('Invalid SDP content: missing required session description fields')
     }
 
+    // Detailed SDP line validation
+    const sdpLines = sdpData.sdp.split('\n').map((line: string) => line.trim()).filter((line: string) => line.length > 0)
+    const lineErrors: string[] = []
+    
+    for (let i = 0; i < sdpLines.length; i++) {
+      const line = sdpLines[i]
+      const lineNumber = i + 1
+      
+      // Check basic SDP line format (type=value)
+      if (!line.match(/^[a-z]=/)) {
+        lineErrors.push(`Line ${lineNumber}: Invalid SDP line format - "${line}"`)
+        continue
+      }
+      
+      // Specific validation for problematic lines
+      if (line.startsWith('a=ssrc:')) {
+        const ssrcMatch = line.match(/^a=ssrc:(\d+)\s+(.+)$/)
+        if (!ssrcMatch) {
+          lineErrors.push(`Line ${lineNumber}: Invalid a=ssrc format - "${line}"`)
+          continue
+        }
+        
+        const ssrcId = ssrcMatch[1]
+        const attributes = ssrcMatch[2]
+        
+        // Check for valid SSRC attributes
+        const validSsrcAttrs = ['cname', 'msid', 'mslabel', 'label']
+        const attrMatch = attributes.match(/^([^:]+):?(.*)$/)
+        
+        if (attrMatch) {
+          const attrName = attrMatch[1]
+          const attrValue = attrMatch[2]
+          
+          if (!validSsrcAttrs.includes(attrName)) {
+            lineErrors.push(`Line ${lineNumber}: Unknown SSRC attribute "${attrName}" - "${line}"`)
+          }
+          
+          // Special validation for msid
+          if (attrName === 'msid' && attrValue) {
+            const msidParts = attrValue.split(' ')
+            if (msidParts.length > 2) {
+              lineErrors.push(`Line ${lineNumber}: Invalid msid format (too many parts) - "${line}"`)
+            }
+          }
+        }
+      }
+      
+      // Check for common malformed lines
+      if (line.includes('\r')) {
+        lineErrors.push(`Line ${lineNumber}: Contains carriage return characters - "${line}"`)
+      }
+      
+      if (line.includes('\t')) {
+        lineErrors.push(`Line ${lineNumber}: Contains tab characters (should be spaces) - "${line}"`)
+      }
+    }
+
     return {
-      valid: true,
+      valid: lineErrors.length === 0,
       parsed: sdpData,
+      lineErrors: lineErrors,
       analysis: {
         type: sdpData.type,
         hasAudio: sdpData.sdp.includes('m=audio'),
@@ -644,7 +702,9 @@ const validateAndParseSdp = (sdpString: string, type: 'offer' | 'answer') => {
         iceUfrag: sdpData.sdp.match(/a=ice-ufrag:([^\r\n]+)/)?.[1] || 'N/A',
         icePwd: sdpData.sdp.match(/a=ice-pwd:([^\r\n]+)/)?.[1] || 'N/A',
         fingerprint: sdpData.sdp.match(/a=fingerprint:([^\r\n]+)/)?.[1] || 'N/A',
-        sdpSize: sdpData.sdp.length
+        sdpSize: sdpData.sdp.length,
+        totalLines: sdpLines.length,
+        ssrcCount: (sdpData.sdp.match(/a=ssrc:/g) || []).length
       }
     }
   } catch (error: any) {
@@ -728,6 +788,46 @@ const clearSdpDebugger = () => {
   answerSdp.value = ''
   sdpParseResult.value = null
   sdpError.value = ''
+}
+
+const fixCommonSdpIssues = (sdpString: string): string => {
+  if (!sdpString) return sdpString
+  
+  let fixedSdp = sdpString
+  
+  // Remove carriage returns
+  fixedSdp = fixedSdp.replace(/\r/g, '')
+  
+  // Replace tabs with spaces
+  fixedSdp = fixedSdp.replace(/\t/g, ' ')
+  
+  // Fix common SSRC msid formatting issues
+  fixedSdp = fixedSdp.replace(/^a=ssrc:(\d+)\s+msid:([^\s]+)\s+([^\s]+)\s+(.+)$/gm, (match, ssrcId, msid1, msid2, extra) => {
+    // If there are more than 2 parts in msid, keep only the first two
+    return `a=ssrc:${ssrcId} msid:${msid1} ${msid2}`
+  })
+  
+  // Remove empty lines and trim each line
+  const lines = fixedSdp.split('\n')
+    .map(line => line.trim())
+    .filter(line => line.length > 0)
+  
+  // Ensure proper line endings
+  return lines.join('\n')
+}
+
+const autoFixSdp = (target: 'offer' | 'answer') => {
+  const currentSdp = target === 'offer' ? offerSdp.value : answerSdp.value
+  const fixedSdp = fixCommonSdpIssues(currentSdp)
+  
+  if (target === 'offer') {
+    offerSdp.value = fixedSdp
+  } else {
+    answerSdp.value = fixedSdp
+  }
+  
+  // Auto-analyze after fixing
+  analyzeSdpPair()
 }
 
 // Lifecycle
@@ -845,6 +945,14 @@ onUnmounted(() => {
                     >
                       Copy
                     </button>
+                    <button
+                      @click="autoFixSdp('offer')"
+                      :disabled="!offerSdp"
+                      class="text-xs px-2 py-1 bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Auto-fix common SDP issues"
+                    >
+                      Fix
+                    </button>
                   </div>
                 </div>
                 <textarea
@@ -875,6 +983,14 @@ onUnmounted(() => {
                       title="Copy to clipboard"
                     >
                       Copy
+                    </button>
+                    <button
+                      @click="autoFixSdp('answer')"
+                      :disabled="!answerSdp"
+                      class="text-xs px-2 py-1 bg-yellow-100 hover:bg-yellow-200 dark:bg-yellow-900 dark:hover:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Auto-fix common SDP issues"
+                    >
+                      Fix
                     </button>
                   </div>
                 </div>
@@ -965,6 +1081,19 @@ onUnmounted(() => {
                     <div v-else class="text-sm text-red-600 dark:text-red-400">
                       {{ sdpParseResult.offer.error }}
                     </div>
+                    <!-- Line Errors for Offer -->
+                    <div v-if="sdpParseResult.offer && sdpParseResult.offer.lineErrors && sdpParseResult.offer.lineErrors.length > 0" class="mt-3 pt-2 border-t">
+                      <h5 class="text-sm font-medium text-red-800 dark:text-red-200 mb-2">Line Validation Issues:</h5>
+                      <div class="space-y-1 max-h-40 overflow-y-auto">
+                        <div
+                          v-for="(error, index) in sdpParseResult.offer.lineErrors"
+                          :key="index"
+                          class="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded"
+                        >
+                          {{ error }}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- Answer Analysis -->
@@ -1003,6 +1132,19 @@ onUnmounted(() => {
                     </div>
                     <div v-else class="text-sm text-red-600 dark:text-red-400">
                       {{ sdpParseResult.answer.error }}
+                    </div>
+                    <!-- Line Errors for Answer -->
+                    <div v-if="sdpParseResult.answer && sdpParseResult.answer.lineErrors && sdpParseResult.answer.lineErrors.length > 0" class="mt-3 pt-2 border-t">
+                      <h5 class="text-sm font-medium text-red-800 dark:text-red-200 mb-2">Line Validation Issues:</h5>
+                      <div class="space-y-1 max-h-40 overflow-y-auto">
+                        <div
+                          v-for="(error, index) in sdpParseResult.answer.lineErrors"
+                          :key="index"
+                          class="text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded"
+                        >
+                          {{ error }}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
