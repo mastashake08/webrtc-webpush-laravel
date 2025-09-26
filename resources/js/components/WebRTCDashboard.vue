@@ -4,6 +4,7 @@ import axios from 'axios'
 import WebRTCCall from './WebRTCCall.vue'
 import UserSelector from './UserSelector.vue'
 import PushNotificationManager from './PushNotificationManager.vue'
+import SipDialer from './SipDialer.vue'
 
 // Refs
 const webrtcCall = ref<InstanceType<typeof WebRTCCall>>()
@@ -956,6 +957,19 @@ onUnmounted(() => {
               @call-initiated="startCall"
             />
           </div>
+        </div>
+
+        <!-- SIP Phone Dialer -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+            📞 SIP Phone
+          </h2>
+          
+          <SipDialer
+            @call-started="(number: string) => console.log('SIP call started:', number)"
+            @call-ended="(number: string) => console.log('SIP call ended:', number)"
+            @call-answered="(number: string) => console.log('SIP call answered:', number)"
+          />
         </div>
 
         <!-- Push Notification Manager -->
